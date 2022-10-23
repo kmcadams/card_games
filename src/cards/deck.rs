@@ -5,6 +5,8 @@ use rand::seq::SliceRandom;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
+use super::hand::Hand;
+
 #[derive(Debug, Copy, Clone, PartialEq, EnumIter)]
 pub enum Suit{
     CLUBS,
@@ -105,12 +107,17 @@ impl Deck{
         self.cards.iter().count()
     }
 
-    pub fn shuffle(&mut self) -> Self{
-        let cards = &mut self.cards;
-        cards.shuffle(&mut thread_rng());
+    pub fn shuffle(&mut self){
+        self.cards.shuffle(&mut thread_rng());
+    }
 
-        Deck { cards: cards.to_owned().to_vec()}
-
+    pub fn deal(&mut self, num_to_deal: u8, hand: &mut Hand){
+        for _ in 0..num_to_deal{
+            if let Some(card) = self.cards.pop(){
+                hand.add(card.to_owned());
+            };
+            
+        }
     }
 }
 
