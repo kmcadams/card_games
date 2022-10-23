@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use rand::thread_rng;
+use rand::seq::SliceRandom;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
@@ -59,7 +61,7 @@ impl Display for Value{
 }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Card{
     suit: Suit,
     value: Value
@@ -101,6 +103,14 @@ impl Deck{
 
     pub fn remaining_cards(&self) -> usize{
         self.cards.iter().count()
+    }
+
+    pub fn shuffle(&mut self) -> Self{
+        let cards = &mut self.cards;
+        cards.shuffle(&mut thread_rng());
+
+        Deck { cards: cards.to_owned().to_vec()}
+
     }
 }
 
