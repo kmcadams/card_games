@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use rand::thread_rng;
@@ -5,7 +6,7 @@ use rand::seq::SliceRandom;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-use super::hand::Hand;
+use crate::player::player::Player;
 
 #[derive(Debug, Copy, Clone, PartialEq, EnumIter)]
 pub enum Suit{
@@ -111,12 +112,24 @@ impl Deck{
         self.cards.shuffle(&mut thread_rng());
     }
 
-    pub fn deal(&mut self, num_to_deal: u8, hand: &mut Hand){
+    pub fn deal(&mut self, num_to_deal: u8, players: &mut HashMap<u8,Player>){
+        if players.len() <= 0{
+            println!("No Players, no deal.");
+            return ()
+        }
+        
         for _ in 0..num_to_deal{
-            if let Some(card) = self.cards.pop(){
-                hand.add(card.to_owned());
-            };
-            
+            for player in players.values_mut(){
+                if let Some(card) = self.cards.pop(){
+                    player.hand.add(card)
+                }
+            }
+            // for player in &players{
+            //     if let Some(card) = self.cards.pop(){
+            //         tmp
+            //         player.hand.add(card.to_owned());
+            //     };
+            // }            
         }
     }
 }
