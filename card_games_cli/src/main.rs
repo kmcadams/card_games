@@ -1,15 +1,9 @@
-use std::collections::HashMap;
-
-use card_games::{
-    cards::{deck_type::DeckType, Deck},
-    game::{BlackjackGame, Game},
-    player::Player,
-};
+use card_games::game::{input::TerminalInput, BlackjackGame, Game};
 
 fn main() {
     println!("Welcome to Card Games");
 
-    let mut game = BlackjackGame::new();
+    let mut game = BlackjackGame::new(TerminalInput);
     game.setup();
 
     loop {

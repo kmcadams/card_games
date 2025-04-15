@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use super::game::Game;
+use super::input::{self, PlayerInput};
 use crate::cards::{deck_type::DeckType, Card, Deck};
 use crate::player::Player;
 
@@ -33,14 +34,15 @@ impl std::fmt::Display for GameResult {
     }
 }
 
-pub struct BlackjackGame {
+pub struct BlackjackGame<I: PlayerInput> {
+    input: I,
     pub deck: Deck,
     pub players: BlackjackPlayers,
     pub turn: Turn,
 }
 
-impl BlackjackGame {
-    pub fn new() -> Self {
+impl<I: PlayerInput> BlackjackGame<I> {
+    pub fn new(input: I) -> Self {
         let mut deck = Deck::new(DeckType::Standard52);
         deck.shuffle();
 
@@ -48,6 +50,7 @@ impl BlackjackGame {
         let dealer = Player::default();
 
         Self {
+            input,
             deck,
             players: BlackjackPlayers { player, dealer },
             turn: Turn::Player,
@@ -73,7 +76,7 @@ impl BlackjackGame {
             return Some(GameResult::DealerWin);
         }
 
-        let choice = prompt_user();
+        let choice = self.input.choose_action(&player.hand);
 
         match choice.as_str() {
             "h" | "hit" => {
@@ -140,7 +143,7 @@ impl BlackjackGame {
     }
 }
 
-impl Game for BlackjackGame {
+impl<I: PlayerInput> Game for BlackjackGame<I> {
     type Outcome = GameResult;
     fn setup(&mut self) {
         let _ = self
@@ -167,16 +170,6 @@ impl Game for BlackjackGame {
     fn winner(&self) -> Option<String> {
         Some("Unimplemented".to_string())
     }
-}
-
-fn prompt_user() -> String {
-    use std::io::{self, Write};
-    print!("Do you want to [h]it or [s]tay? ");
-    io::stdout().flush().unwrap();
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    input.trim().to_lowercase()
 }
 
 fn determine_result(p_score: u8, d_score: u8) -> GameResult {
