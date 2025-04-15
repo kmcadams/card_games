@@ -28,7 +28,7 @@ impl std::fmt::Display for GameResult {
         match self {
             GameResult::PlayerWin => write!(f, "🎉 You win!"),
             GameResult::DealerWin => write!(f, "💥 Dealer wins!"),
-            GameResult::Push => write!(f, "🤝 It's a tie!"),
+            GameResult::Push => write!(f, "🤝 Push!"),
         }
     }
 }
@@ -53,6 +53,91 @@ impl BlackjackGame {
             turn: Turn::Player,
         }
     }
+
+    fn handle_player_turn(&mut self) -> Option<GameResult> {
+        let player = &mut self.players.player;
+        let dealer = &self.players.dealer;
+
+        let visible_card = dealer.hand.cards().first().unwrap();
+
+        println!("\n=== Your Turn ===");
+        println!("Dealer is showing: |{}|", visible_card);
+        println!("Your hand: {}", player.hand);
+
+        let score = BlackjackRules::hand_score(player.hand.cards());
+        println!("Your current score: {}\n", score);
+
+        if BlackjackRules::is_bust(player.hand.cards()) {
+            println!("You busted!");
+            self.turn = Turn::Done;
+            return Some(GameResult::DealerWin);
+        }
+
+        let choice = prompt_user();
+
+        match choice.as_str() {
+            "h" | "hit" => {
+                if let Some(card) = self.deck.draw() {
+                    println!("You drew: {}", card);
+                    player.hand.add(card);
+                }
+            }
+            "s" | "stay" => {
+                println!("You chose to stay.");
+                self.turn = Turn::Dealer;
+            }
+            _ => {
+                println!("Invalid input. Please type 'h' or 's'.");
+            }
+        }
+        None
+    }
+
+    fn handle_dealer_turn(&mut self) {
+        let dealer = &mut self.players.dealer;
+
+        println!("\n=== Dealer's Turn ===");
+        println!("Dealer's hand: {}", dealer.hand);
+
+        let mut score = BlackjackRules::hand_score(dealer.hand.cards());
+        println!("Dealer score: {}", score);
+
+        while score < 17 {
+            println!("Dealer hits.");
+            if let Some(card) = self.deck.draw() {
+                println!("Dealer draws: {}", card);
+                dealer.hand.add(card);
+                score = BlackjackRules::hand_score(dealer.hand.cards());
+                println!("Updated dealer score: {}", score);
+            } else {
+                println!("Deck is empty. Dealer cannot draw.");
+                break;
+            }
+        }
+
+        if score >= 17 && score <= 21 {
+            println!("Dealer stays.");
+        } else if score > 21 {
+            println!("Dealer busted!");
+        }
+
+        println!("Dealer's final hand: {}", dealer.hand);
+        println!("Dealer final score: {}", score);
+        self.turn = Turn::Done;
+    }
+
+    fn end_game(&self) -> GameResult {
+        let player = &self.players.player;
+        let dealer = &self.players.dealer;
+
+        let p_score = BlackjackRules::hand_score(player.hand.cards());
+        let d_score = BlackjackRules::hand_score(dealer.hand.cards());
+
+        println!("Your final hand: {} (Score: {})", player.hand, p_score);
+        println!("Dealer final hand: {} (Score: {})", dealer.hand, d_score);
+
+        determine_result(p_score, d_score)
+    }
 }
 
 impl Game for BlackjackGame {
@@ -66,91 +151,12 @@ impl Game for BlackjackGame {
 
     fn play_round(&mut self) -> Option<GameResult> {
         match self.turn {
-            Turn::Player => {
-                let player = &mut self.players.player;
-                let dealer = &self.players.dealer;
-
-                let visible_card = dealer.hand.cards().first().unwrap();
-
-                println!("\n=== Your Turn ===");
-                println!("Dealer is showing: |{}|", visible_card);
-                println!("Your hand: {}", player.hand);
-
-                let score = BlackjackRules::hand_score(player.hand.cards());
-                println!("Your current score: {}\n", score);
-
-                if BlackjackRules::is_bust(player.hand.cards()) {
-                    println!("You busted!");
-                    self.turn = Turn::Done;
-                    return Some(GameResult::DealerWin);
-                }
-
-                let choice = prompt_user();
-
-                match choice.as_str() {
-                    "h" | "hit" => {
-                        if let Some(card) = self.deck.draw() {
-                            println!("You drew: {}", card);
-                            player.hand.add(card);
-                        }
-                    }
-                    "s" | "stay" => {
-                        println!("You chose to stay.");
-                        self.turn = Turn::Dealer;
-                    }
-                    _ => {
-                        println!("Invalid input. Please type 'h' or 's'.");
-                    }
-                }
-                None
-            }
-
+            Turn::Player => self.handle_player_turn(),
             Turn::Dealer => {
-                let dealer = &mut self.players.dealer;
-
-                println!("\n=== Dealer's Turn ===");
-                println!("Dealer's hand: {}", dealer.hand);
-
-                let mut score = BlackjackRules::hand_score(dealer.hand.cards());
-                println!("Dealer score: {}", score);
-
-                while score < 17 {
-                    println!("Dealer hits.");
-                    if let Some(card) = self.deck.draw() {
-                        println!("Dealer draws: {}", card);
-                        dealer.hand.add(card);
-                        score = BlackjackRules::hand_score(dealer.hand.cards());
-                        println!("Updated dealer score: {}", score);
-                    } else {
-                        println!("Deck is empty. Dealer cannot draw.");
-                        break;
-                    }
-                }
-
-                if score >= 17 && score <= 21 {
-                    println!("Dealer stays.");
-                } else if score > 21 {
-                    println!("Dealer busted!");
-                }
-
-                println!("Dealer's final hand: {}", dealer.hand);
-                println!("Dealer final score: {}", score);
-                self.turn = Turn::Done;
+                self.handle_dealer_turn();
                 None
             }
-
-            Turn::Done => {
-                let player = &self.players.player;
-                let dealer = &self.players.dealer;
-
-                let p_score = BlackjackRules::hand_score(player.hand.cards());
-                let d_score = BlackjackRules::hand_score(dealer.hand.cards());
-
-                println!("Your final hand: {} (Score: {})", player.hand, p_score);
-                println!("Dealer final hand: {} (Score: {})", dealer.hand, d_score);
-
-                Some(determine_result(p_score, d_score))
-            }
+            Turn::Done => Some(self.end_game()),
         }
     }
 
