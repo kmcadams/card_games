@@ -1,3 +1,5 @@
+use crate::cards::Card;
+
 pub trait Game {
     type Outcome;
 
@@ -11,4 +13,8 @@ pub enum GameState {
     Waiting,
     InProgress,
     Complete,
+}
+
+pub trait GameRules {
+    fn card_value(card: &Card) -> u8;
 }

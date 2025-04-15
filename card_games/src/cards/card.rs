@@ -28,11 +28,19 @@ impl Suit {
     pub fn standard_suits() -> impl Iterator<Item = Suit> {
         Suit::iter().filter(|s| *s != Suit::JOKER)
     }
+    pub fn is_red(&self) -> bool {
+        matches!(self, Suit::DIAMONDS | Suit::HEARTS)
+    }
+
+    pub fn is_black(&self) -> bool {
+        matches!(self, Suit::CLUBS | Suit::SPADES)
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, EnumIter)]
+#[repr(u8)]
 pub enum Value {
-    ACE,
+    ACE = 1,
     TWO,
     THREE,
     FOUR,
@@ -45,7 +53,7 @@ pub enum Value {
     JACK,
     QUEEN,
     KING,
-    JOKER,
+    JOKER = 0,
 }
 
 impl Display for Value {
@@ -72,6 +80,35 @@ impl Display for Value {
 impl Value {
     pub fn standard_values() -> impl Iterator<Item = Value> {
         Value::iter().filter(|v| *v != Value::JOKER)
+    }
+    pub fn is_face_card(&self) -> bool {
+        matches!(self, Value::JACK | Value::QUEEN | Value::KING)
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        matches!(
+            self,
+            Value::TWO
+                | Value::THREE
+                | Value::FOUR
+                | Value::FIVE
+                | Value::SIX
+                | Value::SEVEN
+                | Value::EIGHT
+                | Value::NINE
+                | Value::TEN
+        )
+    }
+
+    pub fn is_ace(&self) -> bool {
+        matches!(self, Value::ACE)
+    }
+
+    pub fn rank(&self) -> Option<u8> {
+        match self {
+            Value::JOKER => None,
+            _ => Some(*self as u8),
+        }
     }
 }
 
@@ -102,6 +139,21 @@ impl Card {
 
     pub fn is_joker(&self) -> bool {
         self.value == Value::JOKER
+    }
+    pub fn is_face_card(&self) -> bool {
+        self.value.is_face_card()
+    }
+
+    pub fn is_red(&self) -> bool {
+        self.suit.is_red()
+    }
+
+    pub fn is_black(&self) -> bool {
+        self.suit.is_black()
+    }
+
+    pub fn rank(&self) -> Option<u8> {
+        self.value.rank()
     }
 }
 
