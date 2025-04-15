@@ -1,12 +1,10 @@
-use super::card::{Card, Suit, Value};
+use super::card::Card;
 use super::deck_type::DeckType;
 
-use std::collections::HashMap;
 use std::fmt::Display;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use strum::IntoEnumIterator;
 
 use crate::player::player::Player;
 
@@ -14,12 +12,13 @@ pub type PlayerId = u8;
 
 #[derive(Debug, PartialEq)]
 pub struct Deck {
+    deck_type: DeckType,
     cards: Vec<Card>,
 }
 
 impl Deck {
-    pub(crate) fn from_cards(cards: Vec<Card>) -> Self {
-        Self { cards }
+    pub(crate) fn from_cards(deck_type: DeckType, cards: Vec<Card>) -> Self {
+        Self { deck_type, cards }
     }
     pub fn new(deck_type: DeckType) -> Deck {
         deck_type.build()
@@ -60,12 +59,7 @@ impl Deck {
     }
 
     pub fn reset(&mut self) {
-        self.cards.clear();
-        for value in Value::iter() {
-            for suit in Suit::iter() {
-                self.cards.push(Card::new(suit, value));
-            }
-        }
+        *self = self.deck_type.clone().build();
     }
 
     pub fn add_card(&mut self, card: Card) {
@@ -99,5 +93,41 @@ impl IntoIterator for Deck {
 
     fn into_iter(self) -> Self::IntoIter {
         self.cards.into_iter()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deck_new_standard52_has_52_cards() {
+        let deck = Deck::new(DeckType::Standard52);
+        assert_eq!(deck.remaining_cards(), 52);
+    }
+
+    #[test]
+    fn deck_draw_removes_card() {
+        let mut deck = Deck::new(DeckType::Standard52);
+        let initial = deck.remaining_cards();
+        let card = deck.draw();
+        assert!(card.is_some());
+        assert_eq!(deck.remaining_cards(), initial - 1);
+    }
+
+    #[test]
+    fn deck_peek_does_not_remove_card() {
+        let deck = Deck::new(DeckType::Standard52);
+        let top = deck.peek().cloned();
+        assert_eq!(deck.remaining_cards(), 52);
+        assert_eq!(deck.peek().cloned(), top);
+    }
+
+    #[test]
+    fn deck_reset_refills_deck() {
+        let mut deck = Deck::new(DeckType::Standard52);
+        deck.draw();
+        deck.reset();
+        assert_eq!(deck.remaining_cards(), 52);
     }
 }

@@ -47,3 +47,20 @@ impl BlackjackRules {
         hand.len() == 2 && Self::hand_score(hand) == 21
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cards::card::Suit;
+    use crate::cards::hand::Hand;
+
+    #[test]
+    fn blackjack_scoring_with_ace_adjusts_correctly() {
+        let mut hand = Hand::new();
+        hand.add(Card::new(Suit::DIAMONDS, Value::ACE));
+        hand.add(Card::new(Suit::SPADES, Value::NINE));
+        hand.add(Card::new(Suit::HEARTS, Value::NINE));
+
+        assert_eq!(BlackjackRules::hand_score(hand.cards()), 19);
+    }
+}

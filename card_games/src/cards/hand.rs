@@ -40,3 +40,39 @@ impl Display for Hand {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cards::card::{Suit, Value};
+
+    #[test]
+    fn hand_adds_and_clears_cards() {
+        let mut hand = Hand::new();
+        hand.add(Card::new(Suit::SPADES, Value::ACE));
+        assert_eq!(hand.cards().len(), 1);
+
+        hand.clear_hand();
+        assert!(hand.cards().is_empty());
+    }
+
+    #[test]
+    fn hand_len_and_is_empty_work() {
+        let mut hand = Hand::new();
+        assert!(hand.is_empty());
+
+        hand.add(Card::new(Suit::SPADES, Value::KING));
+        assert_eq!(hand.len(), 1);
+        assert!(!hand.is_empty());
+    }
+
+    #[test]
+    fn hand_display_formats_all_cards() {
+        let mut hand = Hand::new();
+        hand.add(Card::new(Suit::HEARTS, Value::TEN));
+        hand.add(Card::new(Suit::CLUBS, Value::ACE));
+        let output = format!("{}", hand);
+        assert!(output.contains("Ten of ♥"));
+        assert!(output.contains("Ace of ♣"));
+    }
+}

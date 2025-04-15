@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 #[derive(Debug, Copy, Clone, PartialEq, EnumIter)]
@@ -20,6 +21,12 @@ impl Display for Suit {
             Suit::SPADES => write!(f, "♠"),
             Suit::JOKER => write!(f, "Joker"),
         }
+    }
+}
+
+impl Suit {
+    pub fn standard_suits() -> impl Iterator<Item = Suit> {
+        Suit::iter().filter(|s| *s != Suit::JOKER)
     }
 }
 
@@ -62,6 +69,12 @@ impl Display for Value {
     }
 }
 
+impl Value {
+    pub fn standard_values() -> impl Iterator<Item = Value> {
+        Value::iter().filter(|v| *v != Value::JOKER)
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Card {
     suit: Suit,
@@ -99,5 +112,29 @@ impl Display for Card {
         } else {
             write!(f, "{} of {}", self.value, self.suit)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn card_display_is_correct() {
+        let card = Card::new(Suit::HEARTS, Value::TEN);
+        assert_eq!(format!("{}", card), "Ten of ♥");
+    }
+
+    #[test]
+    fn card_fields_are_set_correctly() {
+        let card = Card::new(Suit::DIAMONDS, Value::QUEEN);
+        assert_eq!(*card.suit(), Suit::DIAMONDS);
+        assert_eq!(*card.value(), Value::QUEEN);
+    }
+
+    #[test]
+    fn joker_card_is_detected() {
+        let joker = Card::joker();
+        assert!(joker.is_joker());
+        assert_eq!(format!("{}", joker), "Joker");
     }
 }

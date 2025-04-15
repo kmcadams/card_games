@@ -1,9 +1,8 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
 
 use super::game::Game;
-use super::input::{self, PlayerInput};
-use crate::cards::{deck_type::DeckType, Card, Deck};
+use super::input::PlayerInput;
+use crate::cards::{deck_type::DeckType, Deck};
 use crate::player::Player;
 
 use crate::game::rules::BlackjackRules;
@@ -18,6 +17,8 @@ pub enum Turn {
     Dealer,
     Done,
 }
+
+#[derive(Debug, PartialEq)]
 pub enum GameResult {
     PlayerWin,
     DealerWin,
@@ -183,5 +184,16 @@ fn determine_result(p_score: u8, d_score: u8) -> GameResult {
             Ordering::Less => GameResult::DealerWin,
             Ordering::Equal => GameResult::Push,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn determine_result_returns_dealer_win_if_player_busts() {
+        let result = determine_result(22, 18);
+        assert_eq!(result, GameResult::DealerWin);
     }
 }
