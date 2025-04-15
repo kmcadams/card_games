@@ -1,8 +1,16 @@
+//! Types and utilities for representing and working with playing cards.
+//!
+//! Includes [`Suit`], [`Value`], and [`Card`] structs and helpers for building
+//! decks, checking card properties, and game-specific logic.
+
 use std::fmt::Display;
 
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
+/// Represents the suit of a playing card.
+///
+/// Includes standard suits (`Clubs`, `Diamonds`, `Hearts`, `Spades`) and a special `Joker` variant.
 #[derive(Debug, Copy, Clone, PartialEq, EnumIter)]
 pub enum Suit {
     CLUBS,
@@ -25,18 +33,25 @@ impl Display for Suit {
 }
 
 impl Suit {
+    /// Returns an iterator over the four standard suits (excluding Joker).
     pub fn standard_suits() -> impl Iterator<Item = Suit> {
         Suit::iter().filter(|s| *s != Suit::JOKER)
     }
+
+    /// Returns `true` if the suit is red (Hearts or Diamonds).
     pub fn is_red(&self) -> bool {
         matches!(self, Suit::DIAMONDS | Suit::HEARTS)
     }
 
+    /// Returns `true` if the suit is black (Clubs or Spades).
     pub fn is_black(&self) -> bool {
         matches!(self, Suit::CLUBS | Suit::SPADES)
     }
 }
 
+/// Represents the face value of a playing card.
+///
+/// Includes numbered cards, face cards, Ace, and a Joker.
 #[derive(Debug, Copy, Clone, PartialEq, EnumIter)]
 #[repr(u8)]
 pub enum Value {
@@ -78,13 +93,16 @@ impl Display for Value {
 }
 
 impl Value {
+    /// Returns an iterator over all standard card values (excluding Joker).
     pub fn standard_values() -> impl Iterator<Item = Value> {
         Value::iter().filter(|v| *v != Value::JOKER)
     }
+    /// Returns `true` if the value is a face card (Jack, Queen, or King).
     pub fn is_face_card(&self) -> bool {
         matches!(self, Value::JACK | Value::QUEEN | Value::KING)
     }
 
+    /// Returns `true` if the value is numeric (2 through 10).
     pub fn is_numeric(&self) -> bool {
         matches!(
             self,
@@ -99,11 +117,14 @@ impl Value {
                 | Value::TEN
         )
     }
-
+    /// Returns `true` if the value is an Ace.
     pub fn is_ace(&self) -> bool {
         matches!(self, Value::ACE)
     }
 
+    /// Returns the numerical rank of the value (Ace = 1, King = 13, etc.).
+    ///
+    /// Returns `None` for Joker.
     pub fn rank(&self) -> Option<u8> {
         match self {
             Value::JOKER => None,
@@ -112,6 +133,9 @@ impl Value {
     }
 }
 
+/// Represents a full playing card, consisting of a [`Suit`] and [`Value`].
+///
+/// Includes helpers for creating jokers, determining card color, face cards, and rank.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Card {
     suit: Suit,
@@ -119,17 +143,27 @@ pub struct Card {
 }
 
 impl Card {
+    /// Constructs a new `Card` with the given suit and value.
+    ///
+    /// # Example
+    /// ```
+    /// use card_games::cards::{Card, Suit, Value};
+    /// let card = Card::new(Suit::HEARTS, Value::ACE);
+    /// ```
     pub fn new(suit: Suit, value: Value) -> Card {
         Card { suit, value }
     }
-
+    /// Returns a reference to the card's value.
     pub fn value(&self) -> &Value {
         &self.value
     }
 
+    /// Returns a reference to the card's suit.
     pub fn suit(&self) -> &Suit {
         &self.suit
     }
+
+    /// Returns a Joker card.
     pub fn joker() -> Self {
         Self {
             suit: Suit::JOKER,
@@ -137,21 +171,27 @@ impl Card {
         }
     }
 
+    /// Returns `true` if the card is a Joker.
     pub fn is_joker(&self) -> bool {
         self.value == Value::JOKER
     }
+
+    /// Returns `true` if the card is a face card.
     pub fn is_face_card(&self) -> bool {
         self.value.is_face_card()
     }
 
+    /// Returns `true` if the card is red (Hearts or Diamonds).
     pub fn is_red(&self) -> bool {
         self.suit.is_red()
     }
 
+    /// Returns `true` if the card is black (Clubs or Spades).
     pub fn is_black(&self) -> bool {
         self.suit.is_black()
     }
 
+    /// Returns the rank of the card, or `None` if it's a Joker.
     pub fn rank(&self) -> Option<u8> {
         self.value.rank()
     }

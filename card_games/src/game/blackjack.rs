@@ -2,7 +2,8 @@ use std::cmp::Ordering;
 
 use super::game::Game;
 use super::input::PlayerInput;
-use crate::cards::{deck_type::DeckType, Deck};
+use crate::cards::deck_builder::DeckBuilder;
+use crate::cards::Deck;
 use crate::player::Player;
 
 use crate::game::rules::BlackjackRules;
@@ -44,7 +45,7 @@ pub struct BlackjackGame<I: PlayerInput> {
 
 impl<I: PlayerInput> BlackjackGame<I> {
     pub fn new(input: I) -> Self {
-        let mut deck = Deck::new(DeckType::Standard52);
+        let mut deck = DeckBuilder::new().standard52().build();
         deck.shuffle();
 
         let player = Player::new("You".into());

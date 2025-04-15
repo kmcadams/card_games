@@ -1,6 +1,9 @@
-use super::card::Card;
-use super::deck_type::DeckType;
+//! Represents a deck of cards and provides functionality to shuffle, deal, and draw.
+//!
+//! The `Deck` struct is typically created using the [`DeckBuilder`](crate::cards::deck_builder::DeckBuilder),
+//! allowing for flexible composition of custom or standard decks.
 
+use super::card::Card;
 use std::fmt::Display;
 
 use rand::seq::SliceRandom;
@@ -8,29 +11,42 @@ use rand::thread_rng;
 
 use crate::player::player::Player;
 
+/// Alias for identifying players when dealing cards.
 pub type PlayerId = u8;
 
+/// A collection of cards with functionality for shuffling, drawing, and dealing.
 #[derive(Debug, PartialEq)]
 pub struct Deck {
-    deck_type: DeckType,
     cards: Vec<Card>,
 }
 
 impl Deck {
-    pub(crate) fn from_cards(deck_type: DeckType, cards: Vec<Card>) -> Self {
-        Self { deck_type, cards }
+    /// Creates a deck from a vector of cards.
+    pub fn from_cards(cards: Vec<Card>) -> Self {
+        Self { cards }
     }
-    pub fn new(deck_type: DeckType) -> Deck {
-        deck_type.build()
+
+    /// Creates a new deck using a set of cards.
+
+    pub fn new(cards: Vec<Card>) -> Self {
+        Self::from_cards(cards)
     }
+
+    /// Returns the number of remaining cards in the deck.
 
     pub fn remaining_cards(&self) -> usize {
         self.cards.len()
     }
 
+    /// Shuffles the cards in the deck.
+
     pub fn shuffle(&mut self) {
         self.cards.shuffle(&mut thread_rng());
     }
+    /// Deals a number of cards to the provided players.
+    ///
+    /// # Errors
+    /// Returns an error if the deck runs out of cards.
     pub fn deal<'a, I>(&mut self, num_to_deal: u8, players: I) -> Result<(), String>
     where
         I: IntoIterator<Item = &'a mut Player>,
@@ -50,30 +66,30 @@ impl Deck {
         Ok(())
     }
 
+    /// Draws a single card from the top of the deck.
     pub fn draw(&mut self) -> Option<Card> {
         self.cards.pop()
     }
 
+    /// Returns a reference to the top card without removing it.
     pub fn peek(&self) -> Option<&Card> {
         self.cards.last()
     }
-
-    pub fn reset(&mut self) {
-        *self = self.deck_type.clone().build();
-    }
-
+    /// Adds a card to the bottom of the deck.
     pub fn add_card(&mut self, card: Card) {
         self.cards.push(card);
     }
-
+    /// Checks if a card is contained in the deck.
     pub fn contains(&self, card: &Card) -> bool {
         self.cards.contains(card)
     }
 
+    /// Returns `true` if the deck has no remaining cards.
     pub fn is_empty(&self) -> bool {
         self.cards.is_empty()
     }
 
+    /// Returns the number of cards in the deck.
     pub fn len(&self) -> usize {
         self.cards.len()
     }
@@ -95,20 +111,19 @@ impl IntoIterator for Deck {
         self.cards.into_iter()
     }
 }
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::cards::deck_builder::DeckBuilder;
 
     #[test]
     fn deck_new_standard52_has_52_cards() {
-        let deck = Deck::new(DeckType::Standard52);
+        let deck = DeckBuilder::new().standard52().build();
         assert_eq!(deck.remaining_cards(), 52);
     }
 
     #[test]
     fn deck_draw_removes_card() {
-        let mut deck = Deck::new(DeckType::Standard52);
+        let mut deck = DeckBuilder::new().standard52().build();
         let initial = deck.remaining_cards();
         let card = deck.draw();
         assert!(card.is_some());
@@ -117,17 +132,20 @@ mod tests {
 
     #[test]
     fn deck_peek_does_not_remove_card() {
-        let deck = Deck::new(DeckType::Standard52);
+        let deck = DeckBuilder::new().standard52().build();
         let top = deck.peek().cloned();
         assert_eq!(deck.remaining_cards(), 52);
         assert_eq!(deck.peek().cloned(), top);
     }
 
     #[test]
-    fn deck_reset_refills_deck() {
-        let mut deck = Deck::new(DeckType::Standard52);
+    fn deck_reset_with_builder_refills_deck() {
+        let builder = DeckBuilder::new().standard52();
+        let mut deck = builder.clone().build();
         deck.draw();
-        deck.reset();
+        assert!(deck.remaining_cards() < 52);
+
+        deck = builder.build();
         assert_eq!(deck.remaining_cards(), 52);
     }
 }

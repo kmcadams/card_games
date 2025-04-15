@@ -1,11 +1,36 @@
+//! BlackjackRules contains logic specific to the game of Blackjack,
+//! including card scoring rules, bust detection, and natural blackjack checks.
+//!
+//! These rules assume standard Blackjack behavior:
+//! - Aces count as 11 or 1, depending on total hand score
+//! - Face cards count as 10
+//! - Blackjack is exactly 21 with 2 cards
+
 use crate::{
     cards::{Card, Value},
     game::game::GameRules,
 };
 
+/// Blackjack-specific rules for scoring and win conditions.
+
 pub struct BlackjackRules;
 
 impl GameRules for BlackjackRules {
+    /// Returns the Blackjack value of a given card.
+    ///
+    /// Face cards are worth 10, aces are worth 11, and jokers are worth 0.
+    ///
+    /// This function does not apply Ace-adjustment logic — see [`BlackjackRules::hand_score`] for that.
+    /// # Example
+    /// ```
+    /// use card_games::cards::{Card, Suit, Value};
+    /// use card_games::game::rules::BlackjackRules;
+    /// use crate::card_games::game::game::GameRules;
+    ///
+    /// let card = Card::new(Suit::HEARTS, Value::QUEEN);
+    /// assert_eq!(BlackjackRules::card_value(&card), 10);
+    /// ```
+
     fn card_value(card: &Card) -> u8 {
         match *card.value() {
             Value::ACE => 11,
@@ -24,10 +49,26 @@ impl GameRules for BlackjackRules {
 }
 
 impl BlackjackRules {
+    /// Calculates the score of a Blackjack hand.
+    ///
+    /// Aces are counted as 11 unless the total score exceeds 21,
+    /// in which case they are counted as 1.
+    ///
+    /// # Example
+    /// ```
+    /// use card_games::cards::{Card, Suit, Value};
+    /// use card_games::game::rules::BlackjackRules;
+    /// let hand = vec![
+    ///     Card::new(Suit::HEARTS, Value::ACE),
+    ///     Card::new(Suit::CLUBS, Value::NINE),
+    ///     Card::new(Suit::SPADES, Value::NINE),
+    /// ];
+    /// assert_eq!(BlackjackRules::hand_score(&hand), 19);
+    /// ```
     pub fn hand_score(hand: &[Card]) -> u8 {
         let (mut score, mut ace_count) = hand.iter().fold((0, 0), |(acc, aces), card| {
             let value = Self::card_value(card);
-            let is_ace = *card.value() == Value::ACE;
+            let is_ace = card.value().eq(&Value::ACE);
             (acc + value, aces + is_ace as u8)
         });
 
@@ -39,10 +80,36 @@ impl BlackjackRules {
         score
     }
 
+    /// Returns `true` if the hand is a bust (score > 21).
+    ///
+    /// # Example
+    /// ```
+    /// use card_games::cards::{Card, Suit, Value};
+    /// use card_games::game::rules::BlackjackRules;
+    /// let hand = vec![
+    ///     Card::new(Suit::SPADES, Value::TEN),
+    ///     Card::new(Suit::HEARTS, Value::TEN),
+    ///     Card::new(Suit::DIAMONDS, Value::THREE),
+    /// ];
+    /// assert!(BlackjackRules::is_bust(&hand));
+    /// ```
     pub fn is_bust(hand: &[Card]) -> bool {
         Self::hand_score(hand) > 21
     }
 
+    /// Returns `true` if the hand is a natural blackjack
+    /// (exactly 2 cards totaling 21).
+    ///
+    /// # Example
+    /// ```
+    /// use card_games::cards::{Card, Suit, Value};
+    /// use card_games::game::rules::BlackjackRules;
+    /// let hand = vec![
+    ///     Card::new(Suit::SPADES, Value::ACE),
+    ///     Card::new(Suit::HEARTS, Value::KING),
+    /// ];
+    /// assert!(BlackjackRules::is_blackjack(&hand));
+    /// ```
     pub fn is_blackjack(hand: &[Card]) -> bool {
         hand.len() == 2 && Self::hand_score(hand) == 21
     }
