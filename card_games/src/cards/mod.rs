@@ -1,4 +1,7 @@
+pub mod card;
 pub mod deck;
+pub mod deck_type;
 pub mod hand;
 
-pub use deck::{Card, Deck, Suit, Value};
+pub use card::{Card, Suit, Value};
+pub use deck::Deck;
