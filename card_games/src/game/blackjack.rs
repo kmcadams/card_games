@@ -86,44 +86,46 @@ where
         self.display.show_turn(&self.turn);
         self.display
             .show_message(&format!("Dealer is showing: |{}|", visible_card));
-        self.display.show_hand("You", &player.hand);
 
-        let score = BlackjackRules::hand_score(player.hand.cards());
-        self.display.show_score("You", score);
+        loop {
+            self.display.show_hand("You", &player.hand);
+            self.display
+                .show_score("You", BlackjackRules::hand_score(player.hand.cards()));
 
-        if BlackjackRules::is_bust(player.hand.cards()) {
-            self.display.show_message("You bust!");
-            self.result = GameResult::DealerWin;
-            self.turn = Turn::Done;
-            return;
-        }
+            if BlackjackRules::is_blackjack(player.hand.cards()) {
+                self.result = GameResult::PlayerWin;
+                self.turn = Turn::Done;
+                return;
+            }
 
-        let choice = self.input.choose_action(&player.hand);
+            if BlackjackRules::is_bust(player.hand.cards()) {
+                self.result = GameResult::DealerWin;
+                self.turn = Turn::Done;
+                return;
+            }
 
-        match choice.as_str() {
-            "h" | "hit" => {
-                if let Some(card) = self.deck.draw() {
-                    self.display.show_card_drawn(&card);
-                    player.hand.add(card);
-
-                    // Recalculate score after hit
-                    let score = BlackjackRules::hand_score(player.hand.cards());
-                    self.display.show_score("You", score);
-
-                    if BlackjackRules::is_bust(player.hand.cards()) {
-                        self.display.show_message("You bust!");
+            let choice = self.input.choose_action(&player.hand);
+            match choice.as_str() {
+                "hit" | "h" => {
+                    if let Some(card) = self.deck.draw() {
+                        self.display.show_card_drawn(&card);
+                        player.hand.add(card);
+                        continue;
+                    } else {
+                        self.display.show_message("Deck is empty.");
                         self.result = GameResult::DealerWin;
                         self.turn = Turn::Done;
+                        return;
                     }
                 }
-            }
-            "s" | "stay" => {
-                self.display.show_message("You chose to stay.");
-                self.turn = Turn::Dealer;
-            }
-            _ => {
-                self.display
-                    .show_message("Invalid input. Please type 'h' or 's'.");
+                "stay" | "s" => {
+                    self.turn = Turn::Dealer;
+                    return;
+                }
+                _ => {
+                    self.display
+                        .show_message("Invalid input. Please type 'h' or 's'.");
+                }
             }
         }
     }
