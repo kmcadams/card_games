@@ -1,18 +1,15 @@
-use card_games::game::{input::TerminalInput, BlackjackGame, Game};
+use card_games::{
+    game::{input::TerminalInput, BlackjackGame, Game},
+    ui::console::ConsoleDisplay,
+};
 
 fn main() {
     println!("Welcome to Card Games");
 
-    let mut game = BlackjackGame::new(TerminalInput);
+    let mut game = BlackjackGame::new(TerminalInput, ConsoleDisplay);
     game.setup();
 
-    loop {
-        if let Some(result) = game.play_round() {
-            println!("\n=== Game Over ===");
-            println!("{}", result);
-            break;
-        }
-    }
+    game.play();
 
     // let mut deck = Deck::new(DeckType::Standard52);
     // print!(

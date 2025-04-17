@@ -4,9 +4,9 @@ pub trait Game {
     type Outcome;
 
     fn setup(&mut self);
-    fn play_round(&mut self) -> Option<Self::Outcome>;
+    fn play(&mut self);
     fn is_finished(&self) -> bool;
-    fn winner(&self) -> Option<String>;
+    fn winner(&self) -> Self::Outcome;
 }
 
 pub enum GameState {

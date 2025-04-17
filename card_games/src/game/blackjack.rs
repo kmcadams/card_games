@@ -7,6 +7,7 @@ use crate::cards::Deck;
 use crate::player::Player;
 
 use crate::game::rules::BlackjackRules;
+use crate::ui::blackjack_display::BlackjackDisplay;
 
 pub struct BlackjackPlayers {
     pub player: Player,
@@ -19,8 +20,14 @@ pub enum Turn {
     Done,
 }
 
-#[derive(Debug, PartialEq)]
+enum GameState {
+    InProgress,
+    Finished,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GameResult {
+    Pending,
     PlayerWin,
     DealerWin,
     Push,
@@ -29,6 +36,7 @@ pub enum GameResult {
 impl std::fmt::Display for GameResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            GameResult::Pending => write!(f, "⏳ Game in progress..."),
             GameResult::PlayerWin => write!(f, "🎉 You win!"),
             GameResult::DealerWin => write!(f, "💥 Dealer wins!"),
             GameResult::Push => write!(f, "🤝 Push!"),
@@ -36,15 +44,22 @@ impl std::fmt::Display for GameResult {
     }
 }
 
-pub struct BlackjackGame<I: PlayerInput> {
+pub struct BlackjackGame<I: PlayerInput, D: BlackjackDisplay> {
     input: I,
+    display: D,
     pub deck: Deck,
-    pub players: BlackjackPlayers,
-    pub turn: Turn,
+    players: BlackjackPlayers,
+    turn: Turn,
+    state: GameState,
+    pub result: GameResult,
 }
 
-impl<I: PlayerInput> BlackjackGame<I> {
-    pub fn new(input: I) -> Self {
+impl<I, D> BlackjackGame<I, D>
+where
+    I: PlayerInput,
+    D: BlackjackDisplay,
+{
+    pub fn new(input: I, display: D) -> Self {
         let mut deck = DeckBuilder::new().standard52().build();
         deck.shuffle();
 
@@ -53,29 +68,34 @@ impl<I: PlayerInput> BlackjackGame<I> {
 
         Self {
             input,
+            display,
             deck,
             players: BlackjackPlayers { player, dealer },
             turn: Turn::Player,
+            state: GameState::InProgress,
+            result: GameResult::Pending,
         }
     }
 
-    fn handle_player_turn(&mut self) -> Option<GameResult> {
+    fn handle_player_turn(&mut self) {
         let player = &mut self.players.player;
         let dealer = &self.players.dealer;
 
         let visible_card = dealer.hand.cards().first().unwrap();
 
-        println!("\n=== Your Turn ===");
-        println!("Dealer is showing: |{}|", visible_card);
-        println!("Your hand: {}", player.hand);
+        self.display.show_turn(&self.turn);
+        self.display
+            .show_message(&format!("Dealer is showing: |{}|", visible_card));
+        self.display.show_hand("You", &player.hand);
 
         let score = BlackjackRules::hand_score(player.hand.cards());
-        println!("Your current score: {}\n", score);
+        self.display.show_score("You", score);
 
         if BlackjackRules::is_bust(player.hand.cards()) {
-            println!("You busted!");
+            self.display.show_message("You bust!");
+            self.result = GameResult::DealerWin;
             self.turn = Turn::Done;
-            return Some(GameResult::DealerWin);
+            return;
         }
 
         let choice = self.input.choose_action(&player.hand);
@@ -83,69 +103,94 @@ impl<I: PlayerInput> BlackjackGame<I> {
         match choice.as_str() {
             "h" | "hit" => {
                 if let Some(card) = self.deck.draw() {
-                    println!("You drew: {}", card);
+                    self.display.show_card_drawn(&card);
                     player.hand.add(card);
+
+                    // Recalculate score after hit
+                    let score = BlackjackRules::hand_score(player.hand.cards());
+                    self.display.show_score("You", score);
+
+                    if BlackjackRules::is_bust(player.hand.cards()) {
+                        self.display.show_message("You bust!");
+                        self.result = GameResult::DealerWin;
+                        self.turn = Turn::Done;
+                    }
                 }
             }
             "s" | "stay" => {
-                println!("You chose to stay.");
+                self.display.show_message("You chose to stay.");
                 self.turn = Turn::Dealer;
             }
             _ => {
-                println!("Invalid input. Please type 'h' or 's'.");
+                self.display
+                    .show_message("Invalid input. Please type 'h' or 's'.");
             }
         }
-        None
     }
 
     fn handle_dealer_turn(&mut self) {
         let dealer = &mut self.players.dealer;
 
-        println!("\n=== Dealer's Turn ===");
-        println!("Dealer's hand: {}", dealer.hand);
+        self.display.show_turn(&self.turn);
+        self.display.show_hand("Dealer", &dealer.hand);
 
         let mut score = BlackjackRules::hand_score(dealer.hand.cards());
-        println!("Dealer score: {}", score);
+        self.display.show_score("Dealer", score);
 
         while score < 17 {
-            println!("Dealer hits.");
+            self.display.show_message("Dealer hits.");
             if let Some(card) = self.deck.draw() {
-                println!("Dealer draws: {}", card);
+                self.display.show_card_drawn(&card);
                 dealer.hand.add(card);
                 score = BlackjackRules::hand_score(dealer.hand.cards());
-                println!("Updated dealer score: {}", score);
+                self.display.show_score("Dealer", score);
             } else {
-                println!("Deck is empty. Dealer cannot draw.");
+                self.display
+                    .show_message("Deck is empty. Dealer cannot draw.");
                 break;
             }
         }
 
         if score >= 17 && score <= 21 {
-            println!("Dealer stays.");
+            self.display.show_message("Dealer stays.");
         } else if score > 21 {
-            println!("Dealer busted!");
+            self.display.show_message("Dealer busted!");
         }
 
-        println!("Dealer's final hand: {}", dealer.hand);
-        println!("Dealer final score: {}", score);
+        self.display.show_hand("Dealer", &dealer.hand);
+        self.display.show_score("Dealer", score);
         self.turn = Turn::Done;
     }
 
-    fn end_game(&self) -> GameResult {
+    fn end_game(&mut self) {
         let player = &self.players.player;
         let dealer = &self.players.dealer;
 
         let p_score = BlackjackRules::hand_score(player.hand.cards());
         let d_score = BlackjackRules::hand_score(dealer.hand.cards());
 
-        println!("Your final hand: {} (Score: {})", player.hand, p_score);
-        println!("Dealer final hand: {} (Score: {})", dealer.hand, d_score);
+        self.display.show_message(&format!(
+            "Your final hand: {} (Score: {})",
+            player.hand, p_score
+        ));
 
-        determine_result(p_score, d_score)
+        self.display.show_message(&format!(
+            "Dealer final hand: {} (Score: {})",
+            dealer.hand, d_score
+        ));
+        let result = determine_result(p_score, d_score);
+
+        self.display.show_result(&result);
+        self.result = result;
+        self.state = GameState::Finished
     }
 }
 
-impl<I: PlayerInput> Game for BlackjackGame<I> {
+impl<I, D> Game for BlackjackGame<I, D>
+where
+    I: PlayerInput,
+    D: BlackjackDisplay,
+{
     type Outcome = GameResult;
     fn setup(&mut self) {
         let _ = self
@@ -154,23 +199,24 @@ impl<I: PlayerInput> Game for BlackjackGame<I> {
             .unwrap();
     }
 
-    fn play_round(&mut self) -> Option<GameResult> {
-        match self.turn {
-            Turn::Player => self.handle_player_turn(),
-            Turn::Dealer => {
-                self.handle_dealer_turn();
-                None
+    fn play(&mut self) {
+        while !self.is_finished() {
+            match self.turn {
+                Turn::Player => self.handle_player_turn(),
+                Turn::Dealer => self.handle_dealer_turn(),
+                Turn::Done => {
+                    self.end_game();
+                }
             }
-            Turn::Done => Some(self.end_game()),
         }
     }
 
     fn is_finished(&self) -> bool {
-        matches!(self.turn, Turn::Done)
+        matches!(self.state, GameState::Finished)
     }
 
-    fn winner(&self) -> Option<String> {
-        Some("Unimplemented".to_string())
+    fn winner(&self) -> GameResult {
+        self.result
     }
 }
 
