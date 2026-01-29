@@ -24,7 +24,7 @@ impl GameRules for BlackjackRules {
     /// # Example
     /// ```
     /// use card_games::cards::{Card, Suit, Value};
-    /// use card_games::game::rules::BlackjackRules;
+    /// use card_games::game::blackjack::rules::BlackjackRules;
     /// use crate::card_games::game::game::GameRules;
     ///
     /// let card = Card::new(Suit::HEARTS, Value::QUEEN);
@@ -57,7 +57,7 @@ impl BlackjackRules {
     /// # Example
     /// ```
     /// use card_games::cards::{Card, Suit, Value};
-    /// use card_games::game::rules::BlackjackRules;
+    /// use card_games::game::blackjack::rules::BlackjackRules;
     /// let hand = vec![
     ///     Card::new(Suit::HEARTS, Value::ACE),
     ///     Card::new(Suit::CLUBS, Value::NINE),
@@ -85,7 +85,7 @@ impl BlackjackRules {
     /// # Example
     /// ```
     /// use card_games::cards::{Card, Suit, Value};
-    /// use card_games::game::rules::BlackjackRules;
+    /// use card_games::game::blackjack::rules::BlackjackRules;
     /// let hand = vec![
     ///     Card::new(Suit::SPADES, Value::TEN),
     ///     Card::new(Suit::HEARTS, Value::TEN),
@@ -103,7 +103,7 @@ impl BlackjackRules {
     /// # Example
     /// ```
     /// use card_games::cards::{Card, Suit, Value};
-    /// use card_games::game::rules::BlackjackRules;
+    /// use card_games::game::blackjack::rules::BlackjackRules;
     /// let hand = vec![
     ///     Card::new(Suit::SPADES, Value::ACE),
     ///     Card::new(Suit::HEARTS, Value::KING),

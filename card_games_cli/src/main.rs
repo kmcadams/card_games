@@ -1,15 +1,10 @@
-use card_games::{
-    game::{input::TerminalInput, BlackjackGame, Game},
-    ui::console::ConsoleDisplay,
-};
-
 fn main() {
     println!("Welcome to Card Games");
 
-    let mut game = BlackjackGame::new(TerminalInput, ConsoleDisplay);
-    game.setup();
+    // let mut game = BlackjackGame::new(TerminalInput, ConsoleDisplay);
+    // game.setup();
 
-    game.play();
+    // game.play();
 
     // let mut deck = Deck::new(DeckType::Standard52);
     // print!(
