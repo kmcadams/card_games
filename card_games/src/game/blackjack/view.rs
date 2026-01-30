@@ -1,11 +1,11 @@
 use crate::{
     cards::Card,
-    game::blackjack::{GameResult, Phase},
+    game::blackjack::{types::PlayerAction, GameResult, Phase},
 };
 
 #[derive(Debug, Clone)]
 pub struct BlackjackView {
-    pub input: Vec<Input>,
+    pub available_actions: Vec<PlayerAction>,
     pub phase: Phase,
 
     pub player_cards: Vec<VisibleCard>,
@@ -26,12 +26,4 @@ pub struct BlackjackView {
 pub enum VisibleCard {
     FaceUp(Card),
     FaceDown,
-}
-
-#[derive(Clone, Debug)]
-pub enum Input {
-    Hit,
-    Stay,
-    NewRound,
-    Quit,
 }

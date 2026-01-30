@@ -22,6 +22,10 @@ impl std::fmt::Display for Phase {
 pub enum PlayerAction {
     Hit,
     Stay,
+    Double,
+    Split,
+    NewRound,
+    Quit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

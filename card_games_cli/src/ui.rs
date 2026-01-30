@@ -7,8 +7,8 @@ use ratatui::{
 };
 
 use card_games::game::blackjack::{
-    types::GameResult,
-    view::{BlackjackView, Input, VisibleCard},
+    types::{GameResult, PlayerAction},
+    view::{BlackjackView, VisibleCard},
 };
 
 /// Entry point called from `terminal.draw(|f| ...)`
@@ -72,13 +72,15 @@ fn draw_status(f: &mut Frame, area: ratatui::layout::Rect, view: &BlackjackView)
     lines.push(Line::from(""));
 
     let controls = view
-        .input
+        .available_actions
         .iter()
         .map(|c| match c {
-            Input::Hit => "[H] Hit",
-            Input::Stay => "[S] Stay",
-            Input::NewRound => "[N] New Round",
-            Input::Quit => "[Q] Quit",
+            PlayerAction::Hit => "[H] Hit",
+            PlayerAction::Stay => "[S] Stay",
+            PlayerAction::Double => "[D] Double",
+            PlayerAction::Split => "[P] Split",
+            PlayerAction::NewRound => "[N] New Round",
+            PlayerAction::Quit => "[Q] Quit",
         })
         .collect::<Vec<_>>()
         .join("   ");

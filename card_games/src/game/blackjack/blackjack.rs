@@ -3,7 +3,7 @@ use crate::{
     game::blackjack::{
         rules,
         types::{Phase, PlayerAction},
-        view::{BlackjackView, Input, VisibleCard},
+        view::{BlackjackView, VisibleCard},
         GameResult,
     },
 };
@@ -58,12 +58,8 @@ impl Blackjack {
         self.deal_initial_cards();
     }
     pub fn apply(&mut self, action: PlayerAction) {
-        if self.phase != Phase::PlayerTurn {
-            return;
-        }
-
-        match action {
-            PlayerAction::Hit => {
+        match (self.phase, action) {
+            (Phase::PlayerTurn, PlayerAction::Hit) => {
                 let card = self.draw_card();
                 self.player_hand.add(card);
 
@@ -73,9 +69,26 @@ impl Blackjack {
                 }
             }
 
-            PlayerAction::Stay => {
+            (Phase::PlayerTurn, PlayerAction::Stay) => {
                 self.phase = Phase::DealerTurn;
                 self.play_dealer();
+            }
+
+            (Phase::RoundOver, PlayerAction::NewRound) => {
+                self.new_round();
+            }
+
+            (Phase::PlayerTurn, PlayerAction::Double) => {
+                todo!()
+            }
+
+            (Phase::PlayerTurn, PlayerAction::Split) => {
+                todo!()
+            }
+
+            _ => {
+                // explicitly ignored
+                // TODO, should update user to input an action?
             }
         }
     }
@@ -164,19 +177,19 @@ impl Blackjack {
             }
         };
 
-        let mut controls = vec![Input::Quit];
+        let mut controls = vec![PlayerAction::Quit];
 
         if self.phase == Phase::PlayerTurn {
-            controls.insert(0, Input::Stay);
-            controls.insert(0, Input::Hit);
+            controls.insert(0, PlayerAction::Stay);
+            controls.insert(0, PlayerAction::Hit);
         }
 
         if self.phase == Phase::RoundOver {
-            controls.insert(0, Input::NewRound);
+            controls.insert(0, PlayerAction::NewRound);
         }
 
         BlackjackView {
-            input: controls,
+            available_actions: controls,
             phase: self.phase,
             player_cards,
             dealer_cards,

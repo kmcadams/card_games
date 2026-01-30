@@ -23,27 +23,37 @@ impl App {
     }
 
     pub fn handle_event(&mut self, event: Event) {
-        match event {
-            Event::Key(KeyEvent {
-                code, modifiers, ..
-            }) => match (code, modifiers) {
-                (KeyCode::Char('q'), _) => {
-                    self.should_quit = true;
-                }
-                (KeyCode::Char('h'), _) => {
-                    self.game.apply(PlayerAction::Hit);
-                }
-                (KeyCode::Char('s'), _) => {
-                    self.game.apply(PlayerAction::Stay);
-                }
-                (KeyCode::Char('n'), _) => {
-                    if self.game.view().can_start_new_round {
-                        self.game.new_round();
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
+        let action = match event {
+            Event::Key(KeyEvent { code, .. }) => Self::map_key_to_action(code),
+            _ => None,
+        };
+
+        match action {
+            Some(PlayerAction::Quit) => {
+                self.should_quit = true;
+            }
+
+            Some(PlayerAction::NewRound) => {
+                self.game.apply(PlayerAction::NewRound);
+            }
+
+            Some(action) => {
+                self.game.apply(action);
+            }
+
+            None => {}
+        }
+    }
+
+    fn map_key_to_action(code: KeyCode) -> Option<PlayerAction> {
+        match code {
+            KeyCode::Char('h') => Some(PlayerAction::Hit),
+            KeyCode::Char('s') => Some(PlayerAction::Stay),
+            KeyCode::Char('d') => Some(PlayerAction::Double),
+            KeyCode::Char('p') => Some(PlayerAction::Split),
+            KeyCode::Char('n') => Some(PlayerAction::NewRound),
+            KeyCode::Char('q') => Some(PlayerAction::Quit),
+            _ => None,
         }
     }
 
