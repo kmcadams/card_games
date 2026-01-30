@@ -3,7 +3,7 @@ use crate::{
     game::blackjack::{
         rules,
         types::{Phase, PlayerAction},
-        view::{BlackjackView, VisibleCard},
+        view::{BlackjackView, Input, VisibleCard},
         GameResult,
     },
 };
@@ -46,6 +46,17 @@ impl Blackjack {
         self.phase = Phase::PlayerTurn;
     }
 
+    pub fn new_round(&mut self) {
+        self.player_hand.clear_hand();
+        self.dealer_hand.clear_hand();
+        self.result = GameResult::Pending;
+        self.phase = Phase::Dealing;
+
+        self.deck = DeckBuilder::new().standard52().build();
+        self.deck.shuffle();
+
+        self.deal_initial_cards();
+    }
     pub fn apply(&mut self, action: PlayerAction) {
         if self.phase != Phase::PlayerTurn {
             return;
@@ -99,6 +110,7 @@ impl Blackjack {
             .expect("Deck exhausted during Blackjack round") //TODO: remove expect
     }
     pub fn view(&self) -> BlackjackView {
+        // Player cards are always fully visible
         let player_cards = self
             .player_hand
             .iter()
@@ -106,41 +118,75 @@ impl Blackjack {
             .map(VisibleCard::FaceUp)
             .collect();
 
-        let dealer_cards = match self.phase {
-            Phase::Dealing | Phase::PlayerTurn => self
-                .dealer_hand
-                .iter()
-                .enumerate()
-                .map(|(i, card)| {
-                    if i == 0 {
-                        VisibleCard::FaceDown
-                    } else {
-                        VisibleCard::FaceUp(card.clone())
-                    }
-                })
-                .collect(),
+        // Dealer cards depend on phase
+        let (dealer_cards, dealer_visible_score, dealer_has_hidden_card) = match self.phase {
+            Phase::Dealing | Phase::PlayerTurn => {
+                let visible_cards: Vec<Card> = self
+                    .dealer_hand
+                    .iter()
+                    .skip(1) // skip hole card
+                    .cloned()
+                    .collect();
 
-            Phase::DealerTurn | Phase::RoundOver => self
-                .dealer_hand
-                .iter()
-                .cloned()
-                .map(VisibleCard::FaceUp)
-                .collect(),
+                let visible_score = if visible_cards.is_empty() {
+                    None
+                } else {
+                    Some(rules::hand_score(&visible_cards))
+                };
+
+                let cards = self
+                    .dealer_hand
+                    .iter()
+                    .enumerate()
+                    .map(|(i, card)| {
+                        if i == 0 {
+                            VisibleCard::FaceDown
+                        } else {
+                            VisibleCard::FaceUp(card.clone())
+                        }
+                    })
+                    .collect();
+
+                (cards, visible_score, true)
+            }
+
+            Phase::DealerTurn | Phase::RoundOver => {
+                let cards: Vec<VisibleCard> = self
+                    .dealer_hand
+                    .iter()
+                    .cloned()
+                    .map(VisibleCard::FaceUp)
+                    .collect();
+
+                let score = Some(rules::hand_score(&self.dealer_hand));
+
+                (cards, score, false)
+            }
         };
 
+        let mut controls = vec![Input::Quit];
+
+        if self.phase == Phase::PlayerTurn {
+            controls.insert(0, Input::Stay);
+            controls.insert(0, Input::Hit);
+        }
+
+        if self.phase == Phase::RoundOver {
+            controls.insert(0, Input::NewRound);
+        }
+
         BlackjackView {
+            input: controls,
             phase: self.phase,
             player_cards,
             dealer_cards,
             player_score: rules::hand_score(&self.player_hand),
-            dealer_score: if self.phase == Phase::RoundOver {
-                Some(rules::hand_score(&self.dealer_hand))
-            } else {
-                None
-            },
+            dealer_visible_score,
+            dealer_has_hidden_card,
             result: self.result,
             can_hit: self.phase == Phase::PlayerTurn,
             can_stay: self.phase == Phase::PlayerTurn,
+            can_start_new_round: self.phase == Phase::RoundOver,
         }
     }
 }

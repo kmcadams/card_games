@@ -36,6 +36,11 @@ impl App {
                 (KeyCode::Char('s'), _) => {
                     self.game.apply(PlayerAction::Stay);
                 }
+                (KeyCode::Char('n'), _) => {
+                    if self.game.view().can_start_new_round {
+                        self.game.new_round();
+                    }
+                }
                 _ => {}
             },
             _ => {}

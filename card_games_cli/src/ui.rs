@@ -8,7 +8,7 @@ use ratatui::{
 
 use card_games::game::blackjack::{
     types::GameResult,
-    view::{BlackjackView, VisibleCard},
+    view::{BlackjackView, Input, VisibleCard},
 };
 
 /// Entry point called from `terminal.draw(|f| ...)`
@@ -20,7 +20,7 @@ pub fn draw(f: &mut Frame, view: &BlackjackView) {
             Constraint::Length(7), // player
             Constraint::Min(3),    // status / controls
         ])
-        .split(f.size());
+        .split(f.area());
 
     draw_dealer(f, chunks[0], view);
     draw_player(f, chunks[1], view);
@@ -30,9 +30,10 @@ pub fn draw(f: &mut Frame, view: &BlackjackView) {
 fn draw_dealer(f: &mut Frame, area: ratatui::layout::Rect, view: &BlackjackView) {
     let cards = render_cards(&view.dealer_cards);
 
-    let score = match view.dealer_score {
-        Some(score) => format!("Score: {}", score),
-        None => "Score: ?".to_string(),
+    let score = match (view.dealer_visible_score, view.dealer_has_hidden_card) {
+        (Some(score), true) => format!("Score: {} + ?", score),
+        (Some(score), false) => format!("Score: {}", score),
+        _ => "Score: ?".to_string(),
     };
 
     let text = vec![Line::from("Dealer"), Line::from(cards), Line::from(score)];
@@ -70,10 +71,17 @@ fn draw_status(f: &mut Frame, area: ratatui::layout::Rect, view: &BlackjackView)
 
     lines.push(Line::from(""));
 
-    let controls = match (view.can_hit, view.can_stay) {
-        (true, true) => "[H] Hit   [S] Stay   [Q] Quit",
-        _ => "[Q] Quit",
-    };
+    let controls = view
+        .input
+        .iter()
+        .map(|c| match c {
+            Input::Hit => "[H] Hit",
+            Input::Stay => "[S] Stay",
+            Input::NewRound => "[N] New Round",
+            Input::Quit => "[Q] Quit",
+        })
+        .collect::<Vec<_>>()
+        .join("   ");
 
     lines.push(Line::from(Span::styled(
         controls,
