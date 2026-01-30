@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
@@ -57,20 +57,61 @@ fn draw_player(f: &mut Frame, area: ratatui::layout::Rect, view: &BlackjackView)
     f.render_widget(Paragraph::new(text).block(block), area);
 }
 
-fn draw_status(f: &mut Frame, area: ratatui::layout::Rect, view: &BlackjackView) {
-    let mut lines = Vec::new();
+fn draw_status(f: &mut Frame, area: Rect, view: &BlackjackView) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7), // phase + result
+            Constraint::Length(7), // bank + bet
+            Constraint::Min(3),    // controls
+        ])
+        .split(area);
 
-    lines.push(Line::from(Span::styled(
+    draw_phase_and_result(f, chunks[0], view);
+    draw_bank(f, chunks[1], view);
+    draw_controls(f, chunks[2], view);
+}
+
+fn draw_phase_and_result(f: &mut Frame, area: Rect, view: &BlackjackView) {
+    let mut lines = vec![Line::from(Span::styled(
         view.phase.to_string(),
         Style::default().add_modifier(Modifier::BOLD),
-    )));
+    ))];
 
     if view.result != GameResult::Pending {
         lines.push(Line::from(view.result.to_string()));
     }
 
-    lines.push(Line::from(""));
+    let block = Block::default().borders(Borders::ALL).title("Game");
 
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn draw_bank(f: &mut Frame, area: Rect, view: &BlackjackView) {
+    let line = Line::from(vec![
+        Span::styled("Balance: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            format!("${}", view.bank_balance),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("    "),
+        Span::styled("Bet: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            format!("${}", view.bet_amount),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+
+    let block = Block::default().borders(Borders::ALL).title("Bank");
+
+    f.render_widget(Paragraph::new(line).block(block), area);
+}
+
+fn draw_controls(f: &mut Frame, area: Rect, view: &BlackjackView) {
     let controls = view
         .available_actions
         .iter()
@@ -85,14 +126,12 @@ fn draw_status(f: &mut Frame, area: ratatui::layout::Rect, view: &BlackjackView)
         .collect::<Vec<_>>()
         .join("   ");
 
-    lines.push(Line::from(Span::styled(
-        controls,
-        Style::default().fg(Color::Yellow),
-    )));
+    let block = Block::default().borders(Borders::ALL).title("Controls");
 
-    let block = Block::default().title("Status").borders(Borders::ALL);
-
-    f.render_widget(Paragraph::new(lines).block(block), area);
+    f.render_widget(
+        Paragraph::new(controls).style(Style::default().fg(Color::Cyan)),
+        area,
+    );
 }
 
 fn render_cards(cards: &[VisibleCard]) -> Line<'static> {

@@ -36,6 +36,18 @@ pub enum GameResult {
     Push,
 }
 
+impl GameResult {
+    pub fn determine(player: u8, dealer: u8) -> Self {
+        match (player > 21, dealer > 21) {
+            (true, _) => GameResult::DealerWin,
+            (_, true) => GameResult::PlayerWin,
+            _ if player > dealer => GameResult::PlayerWin,
+            _ if dealer > player => GameResult::DealerWin,
+            _ => GameResult::Push,
+        }
+    }
+}
+
 impl std::fmt::Display for GameResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -44,5 +56,16 @@ impl std::fmt::Display for GameResult {
             GameResult::DealerWin => write!(f, "💥 Dealer wins!"),
             GameResult::Push => write!(f, "🤝 Push!"),
         }
+    }
+}
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_game_result_determine() {
+        assert_eq!(GameResult::determine(21, 20), GameResult::PlayerWin);
+        assert_eq!(GameResult::determine(20, 21), GameResult::DealerWin);
+        assert_eq!(GameResult::determine(21, 21), GameResult::Push);
     }
 }

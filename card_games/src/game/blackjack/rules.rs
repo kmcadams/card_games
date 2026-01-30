@@ -10,22 +10,11 @@ use crate::cards::{Card, Value};
 
 /// Blackjack-specific rules for scoring and win conditions.
 
-pub struct BlackjackRules;
-
 /// Returns the Blackjack value of a given card.
 ///
 /// Face cards are worth 10, aces are worth 11, and jokers are worth 0.
 ///
-/// This function does not apply Ace-adjustment logic — see [`BlackjackRules::hand_score`] for that.
-/// # Example
-/// ```
-/// use card_games::cards::{Card, Suit, Value};
-/// use card_games::game::blackjack::rules::BlackjackRules;
-/// use crate::card_games::game::game::GameRules;
-///
-/// let card = Card::new(Suit::HEARTS, Value::QUEEN);
-/// assert_eq!(BlackjackRules::card_value(&card), 10);
-/// ```
+/// This function does not apply Ace-adjustment logic — see [`hand_score`] for that.
 
 fn card_value(card: &Card) -> u8 {
     match *card.value() {
@@ -51,13 +40,13 @@ fn card_value(card: &Card) -> u8 {
 /// # Example
 /// ```
 /// use card_games::cards::{Card, Suit, Value};
-/// use card_games::game::blackjack::rules::BlackjackRules;
+/// use card_games::game::blackjack::rules::hand_score;
 /// let hand = vec![
 ///     Card::new(Suit::HEARTS, Value::ACE),
 ///     Card::new(Suit::CLUBS, Value::NINE),
 ///     Card::new(Suit::SPADES, Value::NINE),
 /// ];
-/// assert_eq!(BlackjackRules::hand_score(&hand), 19);
+/// assert_eq!(hand_score(&hand), 19);
 /// ```
 pub fn hand_score(hand: &[Card]) -> u8 {
     let (mut score, mut ace_count) = hand.iter().fold((0, 0), |(acc, aces), card| {
@@ -83,13 +72,13 @@ pub fn dealer_should_hit(hand: &[Card]) -> bool {
 /// # Example
 /// ```
 /// use card_games::cards::{Card, Suit, Value};
-/// use card_games::game::blackjack::rules::BlackjackRules;
+/// use card_games::game::blackjack::rules::is_bust;
 /// let hand = vec![
 ///     Card::new(Suit::SPADES, Value::TEN),
 ///     Card::new(Suit::HEARTS, Value::TEN),
 ///     Card::new(Suit::DIAMONDS, Value::THREE),
 /// ];
-/// assert!(BlackjackRules::is_bust(&hand));
+/// assert!(is_bust(&hand));
 /// ```
 pub fn is_bust(hand: &[Card]) -> bool {
     hand_score(hand) > 21
@@ -101,15 +90,19 @@ pub fn is_bust(hand: &[Card]) -> bool {
 /// # Example
 /// ```
 /// use card_games::cards::{Card, Suit, Value};
-/// use card_games::game::blackjack::rules::BlackjackRules;
+/// use card_games::game::blackjack::rules::is_blackjack;
 /// let hand = vec![
 ///     Card::new(Suit::SPADES, Value::ACE),
 ///     Card::new(Suit::HEARTS, Value::KING),
 /// ];
-/// assert!(BlackjackRules::is_blackjack(&hand));
+/// assert!(is_blackjack(&hand));
 /// ```
 pub fn is_blackjack(hand: &[Card]) -> bool {
     hand.len() == 2 && hand_score(hand) == 21
+}
+
+pub fn can_double(hand: &[Card]) -> bool {
+    hand.len() == 2
 }
 
 #[cfg(test)]

@@ -15,6 +15,9 @@ pub struct BlackjackView {
     pub dealer_visible_score: Option<u8>,
     pub dealer_has_hidden_card: bool,
 
+    pub bank_balance: u32,
+    pub bet_amount: u32,
+
     pub result: GameResult,
 
     pub can_hit: bool,
