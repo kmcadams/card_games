@@ -1,34 +1,62 @@
-fn main() {
-    println!("Welcome to Card Games");
+use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{backend::CrosstermBackend, Terminal};
+use std::io::{self, Stdout};
 
-    // let mut game = BlackjackGame::new(TerminalInput, ConsoleDisplay);
-    // game.setup();
+mod app;
+mod ui;
 
-    // game.play();
+use app::App;
 
-    // let mut deck = Deck::new(DeckType::Standard52);
-    // print!(
-    //     "Your deck: {}\nNum of Cards: {}\n",
-    //     deck,
-    //     deck.remaining_cards()
-    // );
+fn main() -> anyhow::Result<()> {
+    setup_terminal()?;
+    let result = run_app();
+    restore_terminal()?;
+    result
+}
 
-    // deck.shuffle();
-    // println!("\n\nShuffled deck:\n{}", deck);
+fn setup_terminal() -> anyhow::Result<()> {
+    enable_raw_mode()?;
 
-    // let mut players: HashMap<u8, Player> = HashMap::new();
-    // players.insert(2, Player::default());
-    // players.insert(1, Player::new("Kyle".to_string()));
+    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
 
-    // if let Err(err) = deck.deal(2, &mut players) {
-    //     println!("Error: {}", err);
-    // }
-    // for (_, v) in &players {
-    //     println!("{}'s Hand: {}", v.name(), v.hand);
-    // }
-    // println!(
-    //     "Updated Deck:\n{}\nNum of Cards remaining in Deck: {}",
-    //     deck,
-    //     deck.remaining_cards()
-    // );
+    Ok(())
+}
+
+fn restore_terminal() -> anyhow::Result<()> {
+    disable_raw_mode()?;
+
+    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+
+    Ok(())
+}
+
+fn run_app() -> anyhow::Result<()> {
+    let stdout = io::stdout();
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let mut app = App::new();
+
+    loop {
+        let view = app.view();
+
+        terminal.draw(|frame| {
+            ui::draw(frame, &view);
+        })?;
+
+        if app.should_quit() {
+            break;
+        }
+
+        if crossterm::event::poll(std::time::Duration::from_millis(250))? {
+            let event = crossterm::event::read()?;
+            app.handle_event(event);
+        }
+    }
+
+    Ok(())
 }

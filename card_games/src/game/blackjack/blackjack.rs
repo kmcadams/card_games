@@ -1,8 +1,9 @@
 use crate::{
-    cards::{deck_builder::DeckBuilder, hand::Hand, Card, Deck},
+    cards::{card, deck_builder::DeckBuilder, hand::Hand, Card, Deck},
     game::blackjack::{
         rules,
         types::{Phase, PlayerAction},
+        view::{BlackjackView, VisibleCard},
         GameResult,
     },
 };
@@ -16,14 +17,35 @@ pub struct Blackjack {
 }
 impl Blackjack {
     pub fn new() -> Self {
-        Blackjack {
+        let mut game = Blackjack {
             phase: Phase::Dealing,
             deck: DeckBuilder::new().standard52().build(),
             player_hand: Hand::new(),
             dealer_hand: Hand::new(),
             result: GameResult::Pending,
-        }
+        };
+
+        game.deck.shuffle();
+
+        game.deal_initial_cards();
+        game
     }
+
+    fn deal_initial_cards(&mut self) {
+        let card = self.draw_card();
+        self.player_hand.add(card);
+        let card = self.draw_card();
+        self.player_hand.add(card);
+        let card = self.draw_card();
+
+        self.dealer_hand.add(card);
+        let card = self.draw_card();
+
+        self.dealer_hand.add(card);
+
+        self.phase = Phase::PlayerTurn;
+    }
+
     pub fn apply(&mut self, action: PlayerAction) {
         if self.phase != Phase::PlayerTurn {
             return;
@@ -76,6 +98,49 @@ impl Blackjack {
             .draw()
             .expect("Deck exhausted during Blackjack round") //TODO: remove expect
     }
-    //TODO: Build a view
-    //pub fn view(&self) -> BlackjackView;
+    pub fn view(&self) -> BlackjackView {
+        let player_cards = self
+            .player_hand
+            .iter()
+            .cloned()
+            .map(VisibleCard::FaceUp)
+            .collect();
+
+        let dealer_cards = match self.phase {
+            Phase::Dealing | Phase::PlayerTurn => self
+                .dealer_hand
+                .iter()
+                .enumerate()
+                .map(|(i, card)| {
+                    if i == 0 {
+                        VisibleCard::FaceDown
+                    } else {
+                        VisibleCard::FaceUp(card.clone())
+                    }
+                })
+                .collect(),
+
+            Phase::DealerTurn | Phase::RoundOver => self
+                .dealer_hand
+                .iter()
+                .cloned()
+                .map(VisibleCard::FaceUp)
+                .collect(),
+        };
+
+        BlackjackView {
+            phase: self.phase,
+            player_cards,
+            dealer_cards,
+            player_score: rules::hand_score(&self.player_hand),
+            dealer_score: if self.phase == Phase::RoundOver {
+                Some(rules::hand_score(&self.dealer_hand))
+            } else {
+                None
+            },
+            result: self.result,
+            can_hit: self.phase == Phase::PlayerTurn,
+            can_stay: self.phase == Phase::PlayerTurn,
+        }
+    }
 }
