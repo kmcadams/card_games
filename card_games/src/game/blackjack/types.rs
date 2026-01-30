@@ -1,3 +1,5 @@
+use crate::{bank::bet::Bet, cards::hand::Hand, player::Player};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Phase {
     Dealing,
@@ -16,9 +18,30 @@ impl std::fmt::Display for Phase {
         }
     }
 }
+#[derive(Debug, Clone)]
+pub struct PlayerHand {
+    pub hand: Hand,
+    pub bet: Bet,
+    pub is_complete: bool,
+}
+
+impl PlayerHand {
+    pub fn new(bet_amount: u32) -> Self {
+        PlayerHand {
+            hand: Hand::new(),
+            bet: Bet { amount: bet_amount },
+            is_complete: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ActiveHand {
+    Primary,
+    Split,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-
 pub enum PlayerAction {
     Hit,
     Stay,

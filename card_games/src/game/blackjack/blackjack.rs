@@ -1,9 +1,9 @@
 use crate::{
-    bank::{bank::Bank, bet::Bet},
+    bank::bank::Bank,
     cards::{deck_builder::DeckBuilder, hand::Hand, Card, Deck},
     game::blackjack::{
         rules,
-        types::{Phase, PlayerAction},
+        types::{ActiveHand, Phase, PlayerAction, PlayerHand},
         view::{BlackjackView, VisibleCard},
         GameResult,
     },
@@ -12,10 +12,10 @@ use crate::{
 pub struct Blackjack {
     phase: Phase,
     deck: Deck,
-    player_hand: Hand,
+    player_hands: Vec<PlayerHand>,
+    active_hand: ActiveHand,
     dealer_hand: Hand,
     bank: Bank,
-    bet: Bet,
     result: GameResult,
 }
 impl Blackjack {
@@ -23,11 +23,12 @@ impl Blackjack {
         let mut game = Blackjack {
             phase: Phase::Dealing,
             deck: DeckBuilder::new().standard52().build(),
-            player_hand: Hand::new(),
+            player_hands: vec![PlayerHand::new(10)],
+            active_hand: ActiveHand::Primary,
             dealer_hand: Hand::new(),
 
             bank: Bank::new(1_000),
-            bet: Bet { amount: 10 },
+
             result: GameResult::Pending,
         };
 
@@ -36,30 +37,91 @@ impl Blackjack {
     }
 
     fn deal_initial_cards(&mut self) {
-        let card = self.draw_card();
-        self.player_hand.add(card);
-        let card = self.draw_card();
-        self.player_hand.add(card);
-        let card = self.draw_card();
+        let card1 = self.draw_card();
+        let card2 = self.draw_card();
+        let dealer_card1 = self.draw_card();
+        let dealer_card2 = self.draw_card();
 
-        self.dealer_hand.add(card);
-        let card = self.draw_card();
+        {
+            let hand = self.active_hand_mut();
+            hand.hand.add(card1);
+            hand.hand.add(card2);
+        }
 
-        self.dealer_hand.add(card);
+        self.dealer_hand.add(dealer_card1);
+        self.dealer_hand.add(dealer_card2);
 
-        self.phase = Phase::PlayerTurn;
+        self.resolve_blackjack_or_continue();
     }
 
+    fn resolve_blackjack_or_continue(&mut self) {
+        let player = &self.player_hands[0];
+
+        let player_blackjack = rules::is_blackjack(&player.hand);
+        let dealer_blackjack = rules::is_blackjack(&self.dealer_hand);
+
+        match (player_blackjack, dealer_blackjack) {
+            (true, true) => {
+                // Push
+                self.bank.deposit(player.bet.amount);
+                self.result = GameResult::Push;
+                self.phase = Phase::RoundOver;
+            }
+
+            (true, false) => {
+                // Player blackjack wins 3:2
+                let payout = player.bet.amount + (player.bet.amount * 3 / 2);
+                self.bank.deposit(payout);
+                self.result = GameResult::PlayerWin;
+                self.phase = Phase::RoundOver;
+            }
+
+            (false, true) => {
+                // Dealer blackjack
+                self.result = GameResult::DealerWin;
+                self.phase = Phase::RoundOver;
+            }
+
+            (false, false) => {
+                // Normal play continues
+                self.phase = Phase::PlayerTurn;
+            }
+        }
+    }
+
+    fn active_hand_index(&self) -> usize {
+        match self.active_hand {
+            ActiveHand::Primary => 0,
+            ActiveHand::Split => 1,
+        }
+    }
+
+    fn active_hand_mut(&mut self) -> &mut PlayerHand {
+        let idx = self.active_hand_index();
+        &mut self.player_hands[idx]
+    }
+
+    fn advance_hand(&mut self) {
+        self.active_hand = match self.active_hand {
+            ActiveHand::Primary => ActiveHand::Split,
+            ActiveHand::Split => ActiveHand::Primary,
+        };
+    }
     pub fn new_round(&mut self) {
-        self.player_hand.clear_hand();
+        self.player_hands = vec![PlayerHand::new(10)];
+        self.active_hand = ActiveHand::Primary;
+
         self.dealer_hand.clear_hand();
         self.result = GameResult::Pending;
-        self.bet.amount = 10;
+
         self.phase = Phase::Dealing;
 
         self.deck = DeckBuilder::new().standard52().build();
         self.deck.shuffle();
-        if !self.bank.withdraw(self.bet.amount) {
+
+        let bet = self.player_hands[0].bet.amount;
+
+        if !self.bank.withdraw(bet) {
             //TODO: add state/view for "out of money"
             return;
         }
@@ -70,15 +132,19 @@ impl Blackjack {
         match (self.phase, action) {
             (Phase::PlayerTurn, PlayerAction::Hit) => {
                 let card = self.draw_card();
-                self.player_hand.add(card);
+                let hand = self.active_hand_mut();
 
-                if rules::is_bust(&self.player_hand) {
+                hand.hand.add(card);
+
+                if rules::is_bust(&hand.hand) {
+                    hand.is_complete = true;
                     self.phase = Phase::RoundOver;
                     self.result = GameResult::DealerWin;
                 }
             }
 
             (Phase::PlayerTurn, PlayerAction::Stay) => {
+                self.active_hand_mut().is_complete = true;
                 self.phase = Phase::DealerTurn;
                 self.play_dealer();
             }
@@ -87,13 +153,25 @@ impl Blackjack {
                 self.new_round();
             }
 
-            (Phase::PlayerTurn, PlayerAction::Double)
-                if rules::can_double(&self.player_hand) && self.bank.withdraw(self.bet.amount) =>
-            {
-                self.bet.amount *= 2;
+            (Phase::PlayerTurn, PlayerAction::Double) => {
+                let bet = {
+                    let hand = self.active_hand_mut();
+                    if !rules::can_double(&hand.hand) {
+                        return;
+                    }
+                    hand.bet.amount
+                };
+
+                if !self.bank.withdraw(bet) {
+                    return;
+                }
 
                 let card = self.draw_card();
-                self.player_hand.add(card);
+                let hand = self.active_hand_mut();
+
+                hand.bet.amount *= 2;
+                hand.hand.add(card);
+                hand.is_complete = true;
 
                 self.phase = Phase::DealerTurn;
                 self.play_dealer();
@@ -120,17 +198,18 @@ impl Blackjack {
     }
 
     fn resolve_round(&mut self) {
-        let player_score = rules::hand_score(&self.player_hand);
+        let player = &self.player_hands[0];
+        let player_score = rules::hand_score(&player.hand);
         let dealer_score = rules::hand_score(&self.dealer_hand);
 
         self.result = GameResult::determine(player_score, dealer_score);
 
         match self.result {
             GameResult::PlayerWin => {
-                self.bank.deposit(self.bet.amount * 2);
+                self.bank.deposit(player.bet.amount * 2);
             }
             GameResult::Push => {
-                self.bank.deposit(self.bet.amount);
+                self.bank.deposit(player.bet.amount);
             }
             GameResult::DealerWin => {
                 // bet already lost
@@ -147,9 +226,10 @@ impl Blackjack {
             .expect("Deck exhausted during Blackjack round") //TODO: remove expect
     }
     pub fn view(&self) -> BlackjackView {
+        let player_hand = &self.player_hands[0];
         // Player cards are always fully visible
-        let player_cards = self
-            .player_hand
+        let player_cards = player_hand
+            .hand
             .iter()
             .cloned()
             .map(VisibleCard::FaceUp)
@@ -207,7 +287,8 @@ impl Blackjack {
             controls.insert(0, PlayerAction::Stay);
             controls.insert(0, PlayerAction::Hit);
 
-            if rules::can_double(&self.player_hand) && self.bank.balance() >= self.bet.amount {
+            if rules::can_double(&player_hand.hand) && self.bank.balance() >= player_hand.bet.amount
+            {
                 controls.insert(0, PlayerAction::Double);
             }
         }
@@ -221,10 +302,10 @@ impl Blackjack {
             phase: self.phase,
             player_cards,
             dealer_cards,
-            player_score: rules::hand_score(&self.player_hand),
+            player_score: rules::hand_score(&player_hand.hand),
             dealer_visible_score,
             dealer_has_hidden_card,
-            bet_amount: self.bet.amount,
+            bet_amount: player_hand.bet.amount,
             bank_balance: self.bank.balance(),
             result: self.result,
             can_hit: self.phase == Phase::PlayerTurn,

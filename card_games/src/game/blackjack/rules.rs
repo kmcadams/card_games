@@ -6,7 +6,7 @@
 //! - Face cards count as 10
 //! - Blackjack is exactly 21 with 2 cards
 
-use crate::cards::{Card, Value};
+use crate::cards::{hand::Hand, Card, Value};
 
 /// Blackjack-specific rules for scoring and win conditions.
 
@@ -103,6 +103,16 @@ pub fn is_blackjack(hand: &[Card]) -> bool {
 
 pub fn can_double(hand: &[Card]) -> bool {
     hand.len() == 2
+}
+
+pub fn can_split(hand: &Hand) -> bool {
+    if hand.len() != 2 {
+        return false;
+    }
+
+    let a = hand.cards()[0].value();
+    let b = hand.cards()[1].value();
+    a == b
 }
 
 #[cfg(test)]
