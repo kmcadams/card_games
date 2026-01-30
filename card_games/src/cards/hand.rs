@@ -71,6 +71,14 @@ impl Display for Hand {
     }
 }
 
+impl std::ops::Deref for Hand {
+    type Target = [Card];
+
+    fn deref(&self) -> &Self::Target {
+        &self.cards
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,16 +1,18 @@
 use crate::cards::{hand::Hand, Card};
-use crate::game::blackjack::{GameResult, Turn};
+use crate::game::blackjack::{GameResult, Phase};
 
 use super::blackjack_display::BlackjackDisplay;
 
+//TODO: Redesign Views
 pub struct ConsoleDisplay;
 
 impl BlackjackDisplay for ConsoleDisplay {
-    fn show_turn(&mut self, turn: &Turn) {
+    fn show_turn(&mut self, turn: &Phase) {
         match turn {
-            Turn::Player => println!("\n=== Your Turn ==="),
-            Turn::Dealer => println!("\n=== Dealer's Turn ==="),
-            Turn::Done => println!("\n=== Game Over ==="),
+            Phase::Dealing => println!("\n=== Dealing Cards ==="),
+            Phase::PlayerTurn => println!("\n=== Your Turn ==="),
+            Phase::DealerTurn => println!("\n=== Dealer's Turn ==="),
+            Phase::RoundOver => println!("\n=== Game Over ==="),
         }
     }
 

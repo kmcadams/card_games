@@ -1,21 +1,20 @@
-use crate::player::Player;
-
-pub(super) struct BlackjackPlayers {
-    pub(super) player: Player,
-    pub(super) dealer: Player,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Phase {
+    Dealing,
+    PlayerTurn,
+    DealerTurn,
+    RoundOver,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Turn {
-    Player,
-    Dealer,
-    Done,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum GameState {
-    InProgress,
-    Finished,
+impl std::fmt::Display for Phase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Phase::Dealing => write!(f, "Dealing cards..."),
+            Phase::PlayerTurn => write!(f, "Your turn"),
+            Phase::DealerTurn => write!(f, "Dealer's turn"),
+            Phase::RoundOver => write!(f, "Round over"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
