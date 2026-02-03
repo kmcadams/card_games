@@ -17,7 +17,7 @@ pub fn draw(f: &mut Frame, view: &BlackjackView) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(7), // dealer
-            Constraint::Length(7), // player
+            Constraint::Min(7),    // player
             Constraint::Min(3),    // status / controls
         ])
         .split(f.area());
@@ -28,7 +28,7 @@ pub fn draw(f: &mut Frame, view: &BlackjackView) {
 }
 
 fn draw_dealer(f: &mut Frame, area: ratatui::layout::Rect, view: &BlackjackView) {
-    let cards = render_cards(&view.dealer_cards);
+    let cards = Line::from(render_cards(&view.dealer_cards));
 
     let score = match (view.dealer_visible_score, view.dealer_has_hidden_card) {
         (Some(score), true) => format!("Score: {} + ?", score),
@@ -43,18 +43,47 @@ fn draw_dealer(f: &mut Frame, area: ratatui::layout::Rect, view: &BlackjackView)
     f.render_widget(Paragraph::new(text).block(block), area);
 }
 
-fn draw_player(f: &mut Frame, area: ratatui::layout::Rect, view: &BlackjackView) {
-    let cards = render_cards(&view.player_cards);
+fn draw_player(f: &mut Frame, area: Rect, view: &BlackjackView) {
+    let mut lines = Vec::new();
 
-    let text = vec![
-        Line::from("Player"),
-        Line::from(cards),
-        Line::from(format!("Score: {}", view.player_score)),
-    ];
+    lines.push(Line::from(Span::styled(
+        "Player",
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
+
+    for (i, hand) in view.player_hands.iter().enumerate() {
+        let is_active = i == view.active_hand_index;
+
+        let prefix = if is_active { "> " } else { "  " };
+        let style = if is_active {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+
+        lines.push(Line::from(Span::styled(
+            format!("{}Hand {}  Bet: ${}", prefix, i + 1, hand.bet_amount),
+            style,
+        )));
+
+        let mut card_spans = Vec::new();
+        card_spans.push(Span::raw("    "));
+        card_spans.extend(render_cards(&hand.cards));
+
+        lines.push(Line::from(card_spans));
+
+        lines.push(Line::from(vec![
+            Span::raw("    "),
+            Span::styled(format!("Score: {}", hand.score), style),
+        ]));
+
+        lines.push(Line::raw(""));
+    }
 
     let block = Block::default().title("Player").borders(Borders::ALL);
-
-    f.render_widget(Paragraph::new(text).block(block), area);
+    f.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 fn draw_status(f: &mut Frame, area: Rect, view: &BlackjackView) {
@@ -88,6 +117,8 @@ fn draw_phase_and_result(f: &mut Frame, area: Rect, view: &BlackjackView) {
 }
 
 fn draw_bank(f: &mut Frame, area: Rect, view: &BlackjackView) {
+    let total_bet: u32 = view.player_hands.iter().map(|h| h.bet_amount).sum();
+
     let line = Line::from(vec![
         Span::styled("Balance: ", Style::default().fg(Color::Gray)),
         Span::styled(
@@ -99,7 +130,7 @@ fn draw_bank(f: &mut Frame, area: Rect, view: &BlackjackView) {
         Span::raw("    "),
         Span::styled("Bet: ", Style::default().fg(Color::Gray)),
         Span::styled(
-            format!("${}", view.bet_amount),
+            format!("${}", total_bet),
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
@@ -134,15 +165,16 @@ fn draw_controls(f: &mut Frame, area: Rect, view: &BlackjackView) {
     );
 }
 
-fn render_cards(cards: &[VisibleCard]) -> Line<'static> {
-    let spans = cards.iter().map(|card| match card {
-        VisibleCard::FaceUp(card) => {
-            Span::styled(format!("[{}]", card), Style::default().fg(Color::White))
-        }
-        VisibleCard::FaceDown => {
-            Span::styled("[##]".to_string(), Style::default().fg(Color::DarkGray))
-        }
-    });
-
-    Line::from(spans.collect::<Vec<_>>())
+fn render_cards(cards: &[VisibleCard]) -> Vec<Span<'static>> {
+    cards
+        .iter()
+        .map(|card| match card {
+            VisibleCard::FaceUp(card) => {
+                Span::styled(format!("[{}]", card), Style::default().fg(Color::White))
+            }
+            VisibleCard::FaceDown => {
+                Span::styled("[##]".to_string(), Style::default().fg(Color::DarkGray))
+            }
+        })
+        .collect()
 }

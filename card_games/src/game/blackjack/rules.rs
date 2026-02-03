@@ -106,13 +106,7 @@ pub fn can_double(hand: &[Card]) -> bool {
 }
 
 pub fn can_split(hand: &Hand) -> bool {
-    if hand.len() != 2 {
-        return false;
-    }
-
-    let a = hand.cards()[0].value();
-    let b = hand.cards()[1].value();
-    a == b
+    hand.len() == 2 && hand[0].value() == hand[1].value()
 }
 
 #[cfg(test)]
