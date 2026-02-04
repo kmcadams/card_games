@@ -1,5 +1,5 @@
 use crate::cards::{hand::Hand, Card};
-use crate::game::blackjack::{GameResult, Phase};
+use crate::game::blackjack::{BlackjackState, GameResult};
 
 use super::blackjack_display::BlackjackDisplay;
 
@@ -7,12 +7,12 @@ use super::blackjack_display::BlackjackDisplay;
 pub struct ConsoleDisplay;
 
 impl BlackjackDisplay for ConsoleDisplay {
-    fn show_turn(&mut self, turn: &Phase) {
+    fn show_turn(&mut self, turn: &BlackjackState) {
         match turn {
-            Phase::Dealing => println!("\n=== Dealing Cards ==="),
-            Phase::PlayerTurn => println!("\n=== Your Turn ==="),
-            Phase::DealerTurn => println!("\n=== Dealer's Turn ==="),
-            Phase::RoundOver => println!("\n=== Game Over ==="),
+            BlackjackState::Dealing => println!("\n=== Dealing Cards ==="),
+            BlackjackState::PlayerTurn { .. } => println!("\n=== Your Turn ==="),
+            BlackjackState::DealerTurn => println!("\n=== Dealer's Turn ==="),
+            BlackjackState::RoundOver => println!("\n=== Game Over ==="),
         }
     }
 

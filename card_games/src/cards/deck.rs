@@ -15,7 +15,7 @@ use crate::player::player::Player;
 pub type PlayerId = u8;
 
 /// A collection of cards with functionality for shuffling, drawing, and dealing.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Deck {
     cards: Vec<Card>,
 }

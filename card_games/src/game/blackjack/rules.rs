@@ -105,8 +105,16 @@ pub fn can_double(hand: &[Card]) -> bool {
     hand.len() == 2
 }
 
-pub fn can_split(hand: &Hand) -> bool {
-    hand.len() == 2 && hand[0].value() == hand[1].value()
+pub enum SplitContext {
+    NoPreviousSplit,
+    AlreadySplit,
+}
+
+pub fn can_split(hand: &Hand, context: SplitContext) -> bool {
+    match context {
+        SplitContext::AlreadySplit => false,
+        SplitContext::NoPreviousSplit => hand.len() == 2 && hand[0].value() == hand[1].value(),
+    }
 }
 
 #[cfg(test)]

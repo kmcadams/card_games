@@ -1,20 +1,57 @@
-use crate::{bank::bet::Bet, cards::hand::Hand, player::Player};
+use crate::{
+    bank::bet::Bet,
+    cards::{deck_builder::DeckBuilder, hand::Hand, Card, Deck},
+};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Phase {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlackjackState {
     Dealing,
-    PlayerTurn,
+    PlayerTurn { hand_index: usize },
     DealerTurn,
     RoundOver,
 }
 
-impl std::fmt::Display for Phase {
+#[derive(Debug, Clone, PartialEq)]
+pub struct Shoe {
+    deck: Deck,
+}
+
+impl Shoe {
+    pub fn new_shuffled() -> Self {
+        let mut deck = DeckBuilder::new().standard52().build();
+        deck.shuffle();
+        Self { deck }
+    }
+
+    pub fn remaining(&self) -> usize {
+        self.deck.len()
+    }
+
+    pub fn draw(&mut self) -> Card {
+        self.deck.draw().expect("Deck exhausted")
+    }
+
+    #[cfg(test)]
+    pub fn rigged(cards: Vec<Card>) -> Self {
+        Self {
+            deck: Deck::from_cards(cards),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Table {
+    pub player_hands: Vec<PlayerHand>,
+    pub dealer_hand: Hand,
+}
+
+impl std::fmt::Display for BlackjackState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Phase::Dealing => write!(f, "Dealing cards..."),
-            Phase::PlayerTurn => write!(f, "Your turn"),
-            Phase::DealerTurn => write!(f, "Dealer's turn"),
-            Phase::RoundOver => write!(f, "Round over"),
+            BlackjackState::Dealing => write!(f, "Dealing cards..."),
+            BlackjackState::PlayerTurn { .. } => write!(f, "Your turn"),
+            BlackjackState::DealerTurn => write!(f, "Dealer's turn"),
+            BlackjackState::RoundOver => write!(f, "Round over"),
         }
     }
 }
@@ -82,6 +119,7 @@ impl std::fmt::Display for GameResult {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

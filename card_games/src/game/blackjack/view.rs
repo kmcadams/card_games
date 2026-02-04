@@ -1,12 +1,12 @@
 use crate::{
     cards::Card,
-    game::blackjack::{types::PlayerAction, GameResult, Phase},
+    game::blackjack::{types::PlayerAction, BlackjackState, GameResult},
 };
 
 #[derive(Debug, Clone)]
 pub struct BlackjackView {
     pub available_actions: Vec<PlayerAction>,
-    pub phase: Phase,
+    pub phase: BlackjackState,
 
     // pub player_cards: Vec<VisibleCard>,
     pub player_hands: Vec<PlayerHandView>,
@@ -17,6 +17,7 @@ pub struct BlackjackView {
     pub dealer_has_hidden_card: bool,
 
     pub bank_balance: u32,
+    pub total_bet: u32,
 
     pub result: GameResult,
 

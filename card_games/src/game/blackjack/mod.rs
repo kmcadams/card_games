@@ -3,4 +3,4 @@ pub mod rules;
 pub mod types;
 pub mod view;
 
-pub(crate) use types::{GameResult, Phase};
+pub(crate) use types::{BlackjackState, GameResult};

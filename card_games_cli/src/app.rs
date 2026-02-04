@@ -1,10 +1,6 @@
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent};
 
-use card_games::game::blackjack::{
-    blackjack::{self, Blackjack},
-    types::PlayerAction,
-    view::BlackjackView,
-};
+use card_games::game::blackjack::{blackjack::Blackjack, types::PlayerAction, view::BlackjackView};
 
 pub struct App {
     game: Blackjack,
@@ -13,8 +9,10 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
+        let mut game = Blackjack::new();
+        game.start_round();
         Self {
-            game: Blackjack::new(),
+            game,
             should_quit: false,
         }
     }
