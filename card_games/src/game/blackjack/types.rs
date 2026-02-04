@@ -32,9 +32,9 @@ impl Shoe {
     }
 
     #[cfg(test)]
-    pub fn rigged(cards: Vec<Card>) -> Self {
+    pub fn rigged(draw_order: Vec<Card>) -> Self {
         Self {
-            deck: Deck::from_cards(cards),
+            deck: Deck::from_cards(draw_order.into_iter().rev().collect()),
         }
     }
 }

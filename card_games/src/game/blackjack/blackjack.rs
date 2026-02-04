@@ -190,7 +190,7 @@ impl Blackjack {
                 hand.is_complete = true;
 
                 // After double, move on (either next hand or dealer)
-                self.advance_to_dealer();
+                self.advance_player_turn_or_dealer(idx);
             }
 
             PlayerAction::Split => {
@@ -293,8 +293,8 @@ impl Blackjack {
             GameResult::DealerWin
         } else if any_push && !any_win && !any_loss {
             GameResult::Push
-        } else if any_win && any_loss {
-            // Mixed outcome; pick something neutral-ish
+        } else if any_win || any_push || any_loss {
+            // Mixed outcomes; pick something neutral-ish.
             GameResult::Push
         } else {
             GameResult::Pending
@@ -443,7 +443,10 @@ impl Blackjack {
 
 #[cfg(test)]
 mod tests {
-    use crate::cards::{Card, Suit, Value};
+    use crate::{
+        bank::bank::Bank,
+        cards::{Card, Suit, Value},
+    };
 
     use super::*;
 
@@ -451,10 +454,8 @@ mod tests {
     fn new_round_withdraws_initial_bet() {
         let mut game = Blackjack::new();
         game.shoe = Shoe::rigged(vec![
-            // Player
             Card::new(Suit::SPADES, Value::TWO),
             Card::new(Suit::CLUBS, Value::THREE),
-            // Dealer
             Card::new(Suit::HEARTS, Value::FOUR),
             Card::new(Suit::DIAMONDS, Value::FIVE),
         ]);
@@ -468,6 +469,12 @@ mod tests {
     #[test]
     fn new_round_deals_initial_cards() {
         let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::FIVE),
+            Card::new(Suit::HEARTS, Value::SIX),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+        ]);
         game.start_round();
         let view = game.view();
 
@@ -478,6 +485,13 @@ mod tests {
     #[test]
     fn hit_adds_one_card_to_player_hand() {
         let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::FIVE),
+            Card::new(Suit::HEARTS, Value::SIX),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::TWO),
+        ]);
         game.start_round();
 
         let initial_cards = game.view().player_hands[0].cards.len();
@@ -490,6 +504,12 @@ mod tests {
     #[test]
     fn stay_advances_to_round_over() {
         let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::FIVE),
+            Card::new(Suit::HEARTS, Value::SIX),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+        ]);
         game.start_round();
         game.apply(PlayerAction::Stay);
 
@@ -500,6 +520,12 @@ mod tests {
     #[test]
     fn double_is_available_on_first_player_turn() {
         let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::FIVE),
+            Card::new(Suit::HEARTS, Value::SIX),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+        ]);
         game.start_round();
         let view = game.view();
 
@@ -509,6 +535,13 @@ mod tests {
     #[test]
     fn double_is_not_available_after_hit() {
         let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::FIVE),
+            Card::new(Suit::HEARTS, Value::SIX),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::TWO),
+        ]);
         game.start_round();
 
         game.apply(PlayerAction::Hit);
@@ -520,15 +553,14 @@ mod tests {
     #[test]
     fn double_doubles_bet_and_withdraws_balance() {
         let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::NINE),
+            Card::new(Suit::HEARTS, Value::EIGHT),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::KING),
+        ]);
         game.start_round();
-
-        // Force a valid double state
-        game.table.player_hands[0].hand = {
-            let mut h = Hand::new();
-            h.add(Card::new(Suit::SPADES, Value::FIVE));
-            h.add(Card::new(Suit::HEARTS, Value::SIX));
-            h
-        };
 
         let initial_balance = game.view().bank_balance;
         let initial_bet = game.view().player_hands[0].bet_amount;
@@ -543,6 +575,13 @@ mod tests {
     #[test]
     fn double_draws_one_card_and_ends_round() {
         let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::NINE),
+            Card::new(Suit::HEARTS, Value::EIGHT),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::KING),
+        ]);
         game.start_round();
 
         let initial_cards = game.view().player_hands[0].cards.len();
@@ -556,6 +595,13 @@ mod tests {
     #[test]
     fn double_is_ignored_after_hit() {
         let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::FIVE),
+            Card::new(Suit::HEARTS, Value::SIX),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::TWO),
+        ]);
         game.start_round();
 
         game.apply(PlayerAction::Hit);
@@ -570,15 +616,14 @@ mod tests {
     #[test]
     fn bet_resets_after_new_round() {
         let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::NINE),
+            Card::new(Suit::HEARTS, Value::EIGHT),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::KING),
+        ]);
         game.start_round();
-
-        // Force a valid double
-        game.table.player_hands[0].hand = {
-            let mut h = Hand::new();
-            h.add(Card::new(Suit::SPADES, Value::FIVE));
-            h.add(Card::new(Suit::HEARTS, Value::SIX));
-            h
-        };
 
         game.apply(PlayerAction::Double);
         assert!(game.view().player_hands[0].bet_amount > 10);
@@ -595,23 +640,144 @@ mod tests {
     #[test]
     fn natural_blackjack_pays_three_to_two() {
         let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::ACE),
+            Card::new(Suit::HEARTS, Value::TEN),
+            Card::new(Suit::CLUBS, Value::NINE),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+        ]);
         game.start_round();
-        let mut player_hand = Hand::new();
-        player_hand.add(Card::new(Suit::SPADES, Value::ACE));
-        player_hand.add(Card::new(Suit::HEARTS, Value::TEN));
-
-        game.table.player_hands[0].hand = player_hand;
-
-        let mut dealer_hand = Hand::new();
-        dealer_hand.add(Card::new(Suit::CLUBS, Value::NINE));
-        dealer_hand.add(Card::new(Suit::DIAMONDS, Value::SEVEN));
-
-        game.table.dealer_hand = dealer_hand;
-
-        game.resolve_blackjack_or_continue();
-
         let view = game.view();
         assert_eq!(view.result, GameResult::PlayerWin);
         assert_eq!(view.bank_balance, 1_000 - 10 + 25);
+    }
+
+    #[test]
+    fn player_and_dealer_blackjack_is_push() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::ACE),
+            Card::new(Suit::HEARTS, Value::TEN),
+            Card::new(Suit::CLUBS, Value::ACE),
+            Card::new(Suit::DIAMONDS, Value::KING),
+        ]);
+
+        game.start_round();
+
+        let view = game.view();
+        assert_eq!(view.phase, BlackjackState::RoundOver);
+        assert_eq!(view.result, GameResult::Push);
+        assert_eq!(view.bank_balance, 1_000);
+    }
+
+    #[test]
+    fn dealer_blackjack_wins_immediately() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::TEN),
+            Card::new(Suit::HEARTS, Value::NINE),
+            Card::new(Suit::CLUBS, Value::ACE),
+            Card::new(Suit::DIAMONDS, Value::KING),
+        ]);
+
+        game.start_round();
+
+        let view = game.view();
+        assert_eq!(view.phase, BlackjackState::RoundOver);
+        assert_eq!(view.result, GameResult::DealerWin);
+        assert_eq!(view.bank_balance, 1_000 - 10);
+    }
+
+    #[test]
+    fn split_creates_two_hands_and_withdraws_second_bet() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::EIGHT),
+            Card::new(Suit::HEARTS, Value::EIGHT),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::TWO),
+            Card::new(Suit::HEARTS, Value::THREE),
+        ]);
+        game.start_round();
+
+        assert!(game.view().available_actions.contains(&PlayerAction::Split));
+        game.apply(PlayerAction::Split);
+
+        let view = game.view();
+        assert_eq!(view.phase, BlackjackState::PlayerTurn { hand_index: 0 });
+        assert_eq!(view.player_hands.len(), 2);
+        assert_eq!(view.player_hands[0].cards.len(), 2);
+        assert_eq!(view.player_hands[1].cards.len(), 2);
+        assert_eq!(view.player_hands[0].bet_amount, 10);
+        assert_eq!(view.player_hands[1].bet_amount, 10);
+        assert_eq!(view.total_bet, 20);
+        assert_eq!(view.bank_balance, 1_000 - 10 - 10);
+    }
+
+    #[test]
+    fn split_is_unavailable_when_bank_cannot_cover_second_bet() {
+        let mut game = Blackjack::new();
+        game.bank = Bank::new(10);
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::EIGHT),
+            Card::new(Suit::HEARTS, Value::EIGHT),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+        ]);
+        game.start_round();
+
+        let before = game.view().player_hands.len();
+        assert!(!game.view().available_actions.contains(&PlayerAction::Split));
+        game.apply(PlayerAction::Split);
+
+        let view = game.view();
+        assert_eq!(view.player_hands.len(), before);
+        assert_eq!(view.bank_balance, 0);
+    }
+
+    #[test]
+    fn double_after_split_advances_to_next_hand() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::EIGHT),
+            Card::new(Suit::HEARTS, Value::EIGHT),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::TWO),
+            Card::new(Suit::HEARTS, Value::THREE),
+            Card::new(Suit::CLUBS, Value::FOUR),
+        ]);
+        game.start_round();
+        game.apply(PlayerAction::Split);
+        game.apply(PlayerAction::Double);
+
+        let view = game.view();
+        assert_eq!(view.phase, BlackjackState::PlayerTurn { hand_index: 1 });
+        assert!(view.player_hands[0].is_complete);
+        assert!(!view.player_hands[1].is_complete);
+        assert_eq!(view.player_hands[0].bet_amount, 20);
+        assert_eq!(view.bank_balance, 1_000 - 10 - 10 - 10);
+    }
+
+    #[test]
+    fn mixed_split_outcome_does_not_leave_result_pending() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::TEN),
+            Card::new(Suit::HEARTS, Value::TEN),
+            Card::new(Suit::CLUBS, Value::KING),
+            Card::new(Suit::DIAMONDS, Value::QUEEN),
+            Card::new(Suit::SPADES, Value::QUEEN),
+            Card::new(Suit::HEARTS, Value::TWO),
+        ]);
+        game.start_round();
+        game.apply(PlayerAction::Split);
+        game.apply(PlayerAction::Stay);
+        game.apply(PlayerAction::Stay);
+
+        let view = game.view();
+        assert_eq!(view.phase, BlackjackState::RoundOver);
+        assert_eq!(view.result, GameResult::Push);
     }
 }
