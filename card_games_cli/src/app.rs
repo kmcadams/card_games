@@ -1,18 +1,30 @@
 use crossterm::event::{Event, KeyCode, KeyEvent};
 
-use card_games::game::blackjack::{blackjack::Blackjack, types::PlayerAction, view::BlackjackView};
+use card_games::game::blackjack::{
+    blackjack::Blackjack,
+    types::{BlackjackEvent, PlayerAction},
+    view::BlackjackView,
+};
+
+enum AppCommand {
+    Action(PlayerAction),
+    NewRound,
+    Quit,
+}
 
 pub struct App {
     game: Blackjack,
+    last_events: Vec<BlackjackEvent>,
     should_quit: bool,
 }
 
 impl App {
     pub fn new() -> Self {
         let mut game = Blackjack::new();
-        game.start_round();
+        let last_events = game.start_round();
         Self {
             game,
+            last_events,
             should_quit: false,
         }
     }
@@ -21,36 +33,36 @@ impl App {
     }
 
     pub fn handle_event(&mut self, event: Event) {
-        let action = match event {
-            Event::Key(KeyEvent { code, .. }) => Self::map_key_to_action(code),
+        let command = match event {
+            Event::Key(KeyEvent { code, .. }) => Self::map_key_to_command(code),
             _ => None,
         };
 
-        match action {
-            Some(PlayerAction::Quit) => {
+        match command {
+            Some(AppCommand::Quit) => {
                 self.should_quit = true;
             }
 
-            Some(PlayerAction::NewRound) => {
-                self.game.apply(PlayerAction::NewRound);
+            Some(AppCommand::NewRound) => {
+                self.last_events = self.game.request_new_round();
             }
 
-            Some(action) => {
-                self.game.apply(action);
+            Some(AppCommand::Action(action)) => {
+                self.last_events = self.game.apply(action);
             }
 
             None => {}
         }
     }
 
-    fn map_key_to_action(code: KeyCode) -> Option<PlayerAction> {
+    fn map_key_to_command(code: KeyCode) -> Option<AppCommand> {
         match code {
-            KeyCode::Char('h') => Some(PlayerAction::Hit),
-            KeyCode::Char('s') => Some(PlayerAction::Stay),
-            KeyCode::Char('d') => Some(PlayerAction::Double),
-            KeyCode::Char('p') => Some(PlayerAction::Split),
-            KeyCode::Char('n') => Some(PlayerAction::NewRound),
-            KeyCode::Char('q') => Some(PlayerAction::Quit),
+            KeyCode::Char('h') => Some(AppCommand::Action(PlayerAction::Hit)),
+            KeyCode::Char('s') => Some(AppCommand::Action(PlayerAction::Stay)),
+            KeyCode::Char('d') => Some(AppCommand::Action(PlayerAction::Double)),
+            KeyCode::Char('p') => Some(AppCommand::Action(PlayerAction::Split)),
+            KeyCode::Char('n') => Some(AppCommand::NewRound),
+            KeyCode::Char('q') => Some(AppCommand::Quit),
             _ => None,
         }
     }

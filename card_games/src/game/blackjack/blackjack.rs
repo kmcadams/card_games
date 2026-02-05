@@ -3,7 +3,7 @@ use crate::{
     cards::{hand::Hand, Card},
     game::blackjack::{
         rules::{self, SplitContext},
-        types::{BlackjackState, PlayerAction, PlayerHand, Shoe, Table},
+        types::{BlackjackEvent, BlackjackState, PlayerAction, PlayerHand, Shoe, Table},
         view::{BlackjackView, PlayerHandView, VisibleCard},
         GameResult,
     },
@@ -33,7 +33,7 @@ impl Blackjack {
         }
     }
 
-    fn deal_initial_cards(&mut self) {
+    fn deal_initial_cards(&mut self, events: &mut Vec<BlackjackEvent>) {
         {
             let hand = &mut self.table.player_hands[0];
             hand.hand.add(self.shoe.draw());
@@ -43,10 +43,10 @@ impl Blackjack {
         self.table.dealer_hand.add(self.shoe.draw());
         self.table.dealer_hand.add(self.shoe.draw());
 
-        self.resolve_blackjack_or_continue();
+        self.resolve_blackjack_or_continue(events);
     }
 
-    fn resolve_blackjack_or_continue(&mut self) {
+    fn resolve_blackjack_or_continue(&mut self, events: &mut Vec<BlackjackEvent>) {
         let player = &self.table.player_hands[0];
 
         let player_blackjack = rules::is_blackjack(&player.hand);
@@ -56,27 +56,27 @@ impl Blackjack {
             (true, true) => {
                 // Push
                 self.bank.deposit(player.bet.amount);
-                self.result = GameResult::Push;
-                self.state = BlackjackState::RoundOver;
+                self.set_result(GameResult::Push, events);
+                self.transition_to(BlackjackState::RoundOver, events);
             }
 
             (true, false) => {
                 // Player blackjack wins 3:2
                 let payout = player.bet.amount + (player.bet.amount * 3 / 2);
                 self.bank.deposit(payout);
-                self.result = GameResult::PlayerWin;
-                self.state = BlackjackState::RoundOver;
+                self.set_result(GameResult::PlayerWin, events);
+                self.transition_to(BlackjackState::RoundOver, events);
             }
 
             (false, true) => {
                 // Dealer blackjack
-                self.result = GameResult::DealerWin;
-                self.state = BlackjackState::RoundOver;
+                self.set_result(GameResult::DealerWin, events);
+                self.transition_to(BlackjackState::RoundOver, events);
             }
 
             (false, false) => {
                 // Normal play continues
-                self.state = BlackjackState::PlayerTurn { hand_index: 0 };
+                self.transition_to(BlackjackState::PlayerTurn { hand_index: 0 }, events);
             }
         }
     }
@@ -88,22 +88,24 @@ impl Blackjack {
         }
     }
 
-    pub fn start_round(&mut self) {
+    pub fn start_round(&mut self) -> Vec<BlackjackEvent> {
+        let mut events = vec![];
         self.table.player_hands = vec![PlayerHand::new(10)];
 
         self.table.dealer_hand.clear_hand();
         self.result = GameResult::Pending;
 
-        self.state = BlackjackState::Dealing;
+        self.transition_to(BlackjackState::Dealing, &mut events);
 
         let bet = self.table.player_hands[0].bet.amount;
 
         if !self.bank.withdraw(bet) {
             //TODO: add state/view for "out of money"
-            return;
+            return events;
         }
 
-        self.deal_initial_cards();
+        self.advance_automatic_transitions(&mut events);
+        events
     }
 
     pub fn needs_shuffle(&self) -> bool {
@@ -114,30 +116,84 @@ impl Blackjack {
         self.shoe = Shoe::new_shuffled(); //TODO expand shoe to handle multiple shuffles
     }
 
-    pub fn apply(&mut self, action: PlayerAction) {
+    pub fn apply(&mut self, action: PlayerAction) -> Vec<BlackjackEvent> {
+        let mut events = vec![];
         let snapshot = self.state;
-        match snapshot {
-            BlackjackState::Dealing => self.handle_dealing(action),
+        let handled = match snapshot {
             BlackjackState::PlayerTurn { hand_index } => {
-                self.handle_player_turn(hand_index, action)
+                self.handle_player_turn(hand_index, action, &mut events)
             }
-            BlackjackState::DealerTurn => {
-                unreachable!("Dealer turn should be handled automatically without player input")
+            BlackjackState::Dealing | BlackjackState::DealerTurn | BlackjackState::RoundOver => {
+                // These phases are engine-driven; player input is ignored.
+                events.push(BlackjackEvent::ActionIgnored {
+                    action,
+                    state: snapshot,
+                });
+                return events;
             }
-            BlackjackState::RoundOver => self.handle_round_over(action),
+        };
+
+        if !handled {
+            events.push(BlackjackEvent::ActionIgnored {
+                action,
+                state: snapshot,
+            });
+            return events;
+        }
+
+        events.insert(0, BlackjackEvent::ActionApplied { action });
+        self.advance_automatic_transitions(&mut events);
+        events
+    }
+
+    pub fn request_new_round(&mut self) -> Vec<BlackjackEvent> {
+        if self.state != BlackjackState::RoundOver {
+            return vec![BlackjackEvent::RoundStartIgnored { state: self.state }];
+        }
+
+        if self.needs_shuffle() {
+            self.shuffle_shoe();
+        }
+
+        let mut events = vec![BlackjackEvent::RoundStarted];
+        events.extend(self.start_round());
+        events
+    }
+
+    fn advance_automatic_transitions(&mut self, events: &mut Vec<BlackjackEvent>) {
+        loop {
+            match self.state {
+                BlackjackState::Dealing => self.deal_initial_cards(events),
+                BlackjackState::DealerTurn => self.play_dealer(events),
+                BlackjackState::PlayerTurn { .. } | BlackjackState::RoundOver => break,
+            }
         }
     }
 
-    fn handle_dealing(&mut self, _action: PlayerAction) {
-        // TODO better transition?
+    fn transition_to(&mut self, next: BlackjackState, events: &mut Vec<BlackjackEvent>) {
+        let previous = self.state;
+        self.state = next;
+
+        if previous != next {
+            events.push(BlackjackEvent::StateChanged {
+                from: previous,
+                to: next,
+            });
+        }
     }
 
-    fn advance_to_dealer(&mut self) {
-        self.state = BlackjackState::DealerTurn;
-        self.play_dealer();
+    fn set_result(&mut self, result: GameResult, events: &mut Vec<BlackjackEvent>) {
+        self.result = result;
+        if result != GameResult::Pending {
+            events.push(BlackjackEvent::RoundResolved { result });
+        }
     }
 
-    fn advance_player_turn_or_dealer(&mut self, idx: usize) {
+    fn advance_to_dealer(&mut self, events: &mut Vec<BlackjackEvent>) {
+        self.transition_to(BlackjackState::DealerTurn, events);
+    }
+
+    fn advance_player_turn_or_dealer(&mut self, idx: usize, events: &mut Vec<BlackjackEvent>) {
         let next = idx + 1;
 
         if let Some((next_idx, _)) = self
@@ -148,15 +204,23 @@ impl Blackjack {
             .skip(next)
             .find(|(_, h)| !h.is_complete)
         {
-            self.state = BlackjackState::PlayerTurn {
-                hand_index: next_idx,
-            };
+            self.transition_to(
+                BlackjackState::PlayerTurn {
+                    hand_index: next_idx,
+                },
+                events,
+            );
         } else {
-            self.advance_to_dealer();
+            self.advance_to_dealer(events);
         }
     }
 
-    fn handle_player_turn(&mut self, idx: usize, action: PlayerAction) {
+    fn handle_player_turn(
+        &mut self,
+        idx: usize,
+        action: PlayerAction,
+        events: &mut Vec<BlackjackEvent>,
+    ) -> bool {
         let hand = &mut self.table.player_hands[idx];
 
         match action {
@@ -165,24 +229,26 @@ impl Blackjack {
 
                 if rules::is_bust(&hand.hand) {
                     hand.is_complete = true;
-                    self.advance_player_turn_or_dealer(idx);
+                    self.advance_player_turn_or_dealer(idx, events);
                 }
+                true
             }
 
             PlayerAction::Stay => {
                 hand.is_complete = true;
-                self.advance_player_turn_or_dealer(idx);
+                self.advance_player_turn_or_dealer(idx, events);
+                true
             }
 
             PlayerAction::Double => {
                 // allowed only on the current hand
                 if !rules::can_double(&hand.hand) {
-                    return;
+                    return false;
                 }
 
                 let bet = hand.bet.amount;
                 if !self.bank.withdraw(bet) {
-                    return;
+                    return false;
                 }
 
                 hand.bet.amount *= 2;
@@ -190,7 +256,8 @@ impl Blackjack {
                 hand.is_complete = true;
 
                 // After double, move on (either next hand or dealer)
-                self.advance_player_turn_or_dealer(idx);
+                self.advance_player_turn_or_dealer(idx, events);
+                true
             }
 
             PlayerAction::Split => {
@@ -199,16 +266,16 @@ impl Blackjack {
                 {
                     let hand = &self.table.player_hands[idx];
                     if !rules::can_split(&hand.hand, split_context) {
-                        return;
+                        return false;
                     }
                     if self.bank.balance() < hand.bet.amount {
-                        return;
+                        return false;
                     }
                 }
 
                 let bet = self.table.player_hands[idx].bet.amount;
                 if !self.bank.withdraw(bet) {
-                    return;
+                    return false;
                 }
 
                 // Extract the two original cards without holding a borrow over self.draw_card()
@@ -232,28 +299,24 @@ impl Blackjack {
                 self.table.player_hands.push(split_hand);
 
                 // Continue playing primary first
-                self.state = BlackjackState::PlayerTurn { hand_index: 0 };
+                self.transition_to(BlackjackState::PlayerTurn { hand_index: 0 }, events);
+                true
             }
-
-            _ => {}
         }
     }
 
-    fn play_dealer(&mut self) {
+    fn play_dealer(&mut self, events: &mut Vec<BlackjackEvent>) {
         while rules::dealer_should_hit(&self.table.dealer_hand) {
             self.table.dealer_hand.add(self.shoe.draw());
         }
 
-        self.resolve_round();
+        self.resolve_round(events);
     }
 
-    fn resolve_round(&mut self) {
-        self.state = BlackjackState::RoundOver;
+    fn resolve_round(&mut self, events: &mut Vec<BlackjackEvent>) {
         let dealer_score = rules::hand_score(&self.table.dealer_hand);
         let dealer_bust = rules::is_bust(&self.table.dealer_hand);
 
-        // You currently store only one GameResult; we’ll set it to “best/worst”
-        // for now so UI has something to show. You can upgrade later.
         let mut any_win = false;
         let mut any_push = false;
         let mut any_loss = false;
@@ -287,7 +350,7 @@ impl Blackjack {
         }
 
         // Collapse multiple results into one display result for now
-        self.result = if any_win && !any_loss {
+        let result = if any_win && !any_loss {
             GameResult::PlayerWin
         } else if any_loss && !any_win && !any_push {
             GameResult::DealerWin
@@ -300,17 +363,9 @@ impl Blackjack {
             GameResult::Pending
         };
 
-        self.state = BlackjackState::RoundOver;
+        self.set_result(result, events);
+        self.transition_to(BlackjackState::RoundOver, events);
     }
-    fn handle_round_over(&mut self, action: PlayerAction) {
-        if action == PlayerAction::NewRound {
-            if self.needs_shuffle() {
-                self.shuffle_shoe();
-            }
-            self.start_round();
-        }
-    }
-
     fn split_context(&self) -> SplitContext {
         if self.table.player_hands.len() > 1 {
             SplitContext::AlreadySplit
@@ -320,7 +375,7 @@ impl Blackjack {
     }
 
     fn available_actions(&self) -> Vec<PlayerAction> {
-        let mut controls = vec![PlayerAction::Quit];
+        let mut controls = vec![];
 
         match self.state {
             BlackjackState::PlayerTurn { .. } => {
@@ -339,10 +394,6 @@ impl Blackjack {
                 {
                     controls.insert(0, PlayerAction::Split);
                 }
-            }
-
-            BlackjackState::RoundOver => {
-                controls.insert(0, PlayerAction::NewRound);
             }
             _ => {}
         }
@@ -464,6 +515,93 @@ mod tests {
 
         assert_eq!(view.bank_balance, 1_000 - 10);
         assert_eq!(view.player_hands[0].bet_amount, 10);
+    }
+
+    #[test]
+    fn start_round_resolves_dealing_before_waiting_for_player() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::FIVE),
+            Card::new(Suit::HEARTS, Value::SIX),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+        ]);
+
+        game.start_round();
+
+        assert!(matches!(
+            game.view().phase,
+            BlackjackState::PlayerTurn { .. } | BlackjackState::RoundOver
+        ));
+    }
+
+    #[test]
+    fn apply_ignores_input_during_engine_driven_states() {
+        let mut game = Blackjack::new();
+        game.state = BlackjackState::DealerTurn;
+        let dealer_turn_events = game.apply(PlayerAction::Hit);
+        assert_eq!(game.state, BlackjackState::DealerTurn);
+        assert_eq!(
+            dealer_turn_events,
+            vec![BlackjackEvent::ActionIgnored {
+                action: PlayerAction::Hit,
+                state: BlackjackState::DealerTurn,
+            }]
+        );
+
+        game.state = BlackjackState::Dealing;
+        let dealing_events = game.apply(PlayerAction::Stay);
+        assert_eq!(game.state, BlackjackState::Dealing);
+        assert_eq!(
+            dealing_events,
+            vec![BlackjackEvent::ActionIgnored {
+                action: PlayerAction::Stay,
+                state: BlackjackState::Dealing,
+            }]
+        );
+
+        game.state = BlackjackState::RoundOver;
+        let round_over_events = game.apply(PlayerAction::Stay);
+        assert_eq!(game.state, BlackjackState::RoundOver);
+        assert_eq!(
+            round_over_events,
+            vec![BlackjackEvent::ActionIgnored {
+                action: PlayerAction::Stay,
+                state: BlackjackState::RoundOver,
+            }]
+        );
+    }
+
+    #[test]
+    fn apply_stay_emits_action_and_transition_events() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::FIVE),
+            Card::new(Suit::HEARTS, Value::SIX),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+        ]);
+        game.start_round();
+
+        let events = game.apply(PlayerAction::Stay);
+
+        assert!(events.contains(&BlackjackEvent::ActionApplied {
+            action: PlayerAction::Stay
+        }));
+        assert!(events.contains(&BlackjackEvent::StateChanged {
+            from: BlackjackState::PlayerTurn { hand_index: 0 },
+            to: BlackjackState::DealerTurn,
+        }));
+        assert!(events.contains(&BlackjackEvent::StateChanged {
+            from: BlackjackState::DealerTurn,
+            to: BlackjackState::RoundOver,
+        }));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, BlackjackEvent::RoundResolved { .. })),
+            "Expected a RoundResolved event after dealer play"
+        );
     }
 
     #[test]
@@ -631,10 +769,32 @@ mod tests {
         game.apply(PlayerAction::Stay);
         assert_eq!(game.view().phase, BlackjackState::RoundOver);
 
-        game.apply(PlayerAction::NewRound);
+        let events = game.request_new_round();
+        assert!(events.contains(&BlackjackEvent::RoundStarted));
 
         let view = game.view();
         assert_eq!(view.player_hands[0].bet_amount, 10);
+    }
+
+    #[test]
+    fn request_new_round_is_ignored_when_round_is_not_over() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::FIVE),
+            Card::new(Suit::HEARTS, Value::SIX),
+            Card::new(Suit::CLUBS, Value::TEN),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+        ]);
+        game.start_round();
+
+        let events = game.request_new_round();
+
+        assert_eq!(
+            events,
+            vec![BlackjackEvent::RoundStartIgnored {
+                state: BlackjackState::PlayerTurn { hand_index: 0 },
+            }]
+        );
     }
 
     #[test]

@@ -78,22 +78,42 @@ pub enum ActiveHand {
     Split,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayerAction {
     Hit,
     Stay,
     Double,
     Split,
-    NewRound,
-    Quit,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameResult {
     Pending,
     PlayerWin,
     DealerWin,
     Push,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlackjackEvent {
+    ActionApplied {
+        action: PlayerAction,
+    },
+    ActionIgnored {
+        action: PlayerAction,
+        state: BlackjackState,
+    },
+    StateChanged {
+        from: BlackjackState,
+        to: BlackjackState,
+    },
+    RoundResolved {
+        result: GameResult,
+    },
+    RoundStarted,
+    RoundStartIgnored {
+        state: BlackjackState,
+    },
 }
 
 impl GameResult {

@@ -143,7 +143,7 @@ fn draw_bank(f: &mut Frame, area: Rect, view: &BlackjackView) {
 }
 
 fn draw_controls(f: &mut Frame, area: Rect, view: &BlackjackView) {
-    let controls = view
+    let mut controls = view
         .available_actions
         .iter()
         .map(|c| match c {
@@ -151,16 +151,22 @@ fn draw_controls(f: &mut Frame, area: Rect, view: &BlackjackView) {
             PlayerAction::Stay => "[S] Stay",
             PlayerAction::Double => "[D] Double",
             PlayerAction::Split => "[P] Split",
-            PlayerAction::NewRound => "[N] New Round",
-            PlayerAction::Quit => "[Q] Quit",
         })
-        .collect::<Vec<_>>()
-        .join("   ");
+        .collect::<Vec<_>>();
+
+    if view.can_start_new_round {
+        controls.push("[N] New Round");
+    }
+    controls.push("[Q] Quit");
+
+    let controls = controls.join("   ");
 
     let block = Block::default().borders(Borders::ALL).title("Controls");
 
     f.render_widget(
-        Paragraph::new(controls).style(Style::default().fg(Color::Cyan)),
+        Paragraph::new(controls)
+            .style(Style::default().fg(Color::Cyan))
+            .block(block),
         area,
     );
 }
