@@ -34,7 +34,7 @@ impl Shoe {
     #[cfg(test)]
     pub fn rigged(draw_order: Vec<Card>) -> Self {
         Self {
-            deck: Deck::from_cards(draw_order.into_iter().rev().collect()),
+            deck: Deck::from_cards(draw_order),
         }
     }
 }
@@ -72,12 +72,6 @@ impl PlayerHand {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ActiveHand {
-    Primary,
-    Split,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayerAction {
     Hit,
@@ -92,28 +86,6 @@ pub enum GameResult {
     PlayerWin,
     DealerWin,
     Push,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlackjackEvent {
-    ActionApplied {
-        action: PlayerAction,
-    },
-    ActionIgnored {
-        action: PlayerAction,
-        state: BlackjackState,
-    },
-    StateChanged {
-        from: BlackjackState,
-        to: BlackjackState,
-    },
-    RoundResolved {
-        result: GameResult,
-    },
-    RoundStarted,
-    RoundStartIgnored {
-        state: BlackjackState,
-    },
 }
 
 impl GameResult {

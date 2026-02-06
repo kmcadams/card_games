@@ -1,10 +1,6 @@
 use crossterm::event::{Event, KeyCode, KeyEvent};
 
-use card_games::game::blackjack::{
-    blackjack::Blackjack,
-    types::{BlackjackEvent, PlayerAction},
-    view::BlackjackView,
-};
+use card_games::game::blackjack::{blackjack::Blackjack, types::PlayerAction, view::BlackjackView};
 
 enum AppCommand {
     Action(PlayerAction),
@@ -14,17 +10,15 @@ enum AppCommand {
 
 pub struct App {
     game: Blackjack,
-    last_events: Vec<BlackjackEvent>,
     should_quit: bool,
 }
 
 impl App {
     pub fn new() -> Self {
         let mut game = Blackjack::new();
-        let last_events = game.start_round();
+        game.start_round();
         Self {
             game,
-            last_events,
             should_quit: false,
         }
     }
@@ -44,11 +38,11 @@ impl App {
             }
 
             Some(AppCommand::NewRound) => {
-                self.last_events = self.game.request_new_round();
+                self.game.start_round();
             }
 
             Some(AppCommand::Action(action)) => {
-                self.last_events = self.game.apply(action);
+                self.game.apply(action);
             }
 
             None => {}

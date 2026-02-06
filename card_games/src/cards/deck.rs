@@ -4,6 +4,7 @@
 //! allowing for flexible composition of custom or standard decks.
 
 use super::card::Card;
+use std::collections::VecDeque;
 use std::fmt::Display;
 
 use rand::seq::SliceRandom;
@@ -17,13 +18,15 @@ pub type PlayerId = u8;
 /// A collection of cards with functionality for shuffling, drawing, and dealing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Deck {
-    cards: Vec<Card>,
+    cards: VecDeque<Card>,
 }
 
 impl Deck {
     /// Creates a deck from a vector of cards.
     pub fn from_cards(cards: Vec<Card>) -> Self {
-        Self { cards }
+        Self {
+            cards: cards.into(),
+        }
     }
 
     /// Creates a new deck using a set of cards.
@@ -41,8 +44,11 @@ impl Deck {
     /// Shuffles the cards in the deck.
 
     pub fn shuffle(&mut self) {
-        self.cards.shuffle(&mut thread_rng());
+        let mut v: Vec<_> = self.cards.iter().cloned().collect();
+        v.shuffle(&mut thread_rng());
+        self.cards = VecDeque::from(v);
     }
+
     /// Deals a number of cards to the provided players.
     ///
     /// # Errors
@@ -55,7 +61,7 @@ impl Deck {
 
         for _ in 0..num_to_deal {
             for player in players.iter_mut() {
-                if let Some(card) = self.cards.pop() {
+                if let Some(card) = self.cards.pop_front() {
                     player.hand.add(card);
                 } else {
                     return Err("Deck is out of cards!".into());
@@ -68,16 +74,16 @@ impl Deck {
 
     /// Draws a single card from the top of the deck.
     pub fn draw(&mut self) -> Option<Card> {
-        self.cards.pop()
+        self.cards.pop_front()
     }
 
     /// Returns a reference to the top card without removing it.
     pub fn peek(&self) -> Option<&Card> {
-        self.cards.last()
+        self.cards.front()
     }
     /// Adds a card to the bottom of the deck.
     pub fn add_card(&mut self, card: Card) {
-        self.cards.push(card);
+        self.cards.push_back(card);
     }
     /// Checks if a card is contained in the deck.
     pub fn contains(&self, card: &Card) -> bool {
@@ -105,7 +111,7 @@ impl Display for Deck {
 
 impl IntoIterator for Deck {
     type Item = Card;
-    type IntoIter = std::vec::IntoIter<Card>;
+    type IntoIter = std::collections::vec_deque::IntoIter<Card>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.cards.into_iter()

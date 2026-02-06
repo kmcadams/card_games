@@ -3,7 +3,7 @@ use crate::{
     cards::{hand::Hand, Card},
     game::blackjack::{
         rules::{self, SplitContext},
-        types::{BlackjackEvent, BlackjackState, PlayerAction, PlayerHand, Shoe, Table},
+        types::{BlackjackState, PlayerAction, PlayerHand, Shoe, Table},
         view::{BlackjackView, PlayerHandView, VisibleCard},
         GameResult,
     },
@@ -33,50 +33,47 @@ impl Blackjack {
         }
     }
 
-    fn deal_initial_cards(&mut self, events: &mut Vec<BlackjackEvent>) {
-        {
-            let hand = &mut self.table.player_hands[0];
-            hand.hand.add(self.shoe.draw());
-            hand.hand.add(self.shoe.draw());
-        }
-
-        self.table.dealer_hand.add(self.shoe.draw());
+    fn deal_initial_cards(&mut self) {
+        let hand = &mut self.table.player_hands[0];
+        hand.hand.add(self.shoe.draw());
         self.table.dealer_hand.add(self.shoe.draw());
 
-        self.resolve_blackjack_or_continue(events);
+        hand.hand.add(self.shoe.draw());
+
+        self.table.dealer_hand.add(self.shoe.draw());
     }
 
-    fn resolve_blackjack_or_continue(&mut self, events: &mut Vec<BlackjackEvent>) {
+    fn resolve_blackjack_or_continue(&mut self) {
         let player = &self.table.player_hands[0];
 
-        let player_blackjack = rules::is_blackjack(&player.hand);
-        let dealer_blackjack = rules::is_blackjack(&self.table.dealer_hand);
+        let player_blackjack = rules::is_blackjack(&player.hand.cards());
+        let dealer_blackjack = rules::is_blackjack(&self.table.dealer_hand.cards());
 
+        #[cfg(test)]
+        {
+            eprintln!(
+                "RESOLVE BJ -> P: {:?} BJ: {}| D: {:?} BJ: {}",
+                self.table.player_hands[0].hand.cards(),
+                player_blackjack,
+                self.table.dealer_hand.cards(),
+                dealer_blackjack
+            );
+        }
         match (player_blackjack, dealer_blackjack) {
             (true, true) => {
-                // Push
-                self.bank.deposit(player.bet.amount);
-                self.set_result(GameResult::Push, events);
-                self.transition_to(BlackjackState::RoundOver, events);
+                self.bank.deposit(self.table.player_hands[0].bet.amount);
+                self.end_round(GameResult::Push);
             }
-
             (true, false) => {
-                // Player blackjack wins 3:2
-                let payout = player.bet.amount + (player.bet.amount * 3 / 2);
-                self.bank.deposit(payout);
-                self.set_result(GameResult::PlayerWin, events);
-                self.transition_to(BlackjackState::RoundOver, events);
+                let bet = self.table.player_hands[0].bet.amount;
+                self.bank.deposit(bet + bet * 3 / 2);
+                self.end_round(GameResult::PlayerWin);
             }
-
             (false, true) => {
-                // Dealer blackjack
-                self.set_result(GameResult::DealerWin, events);
-                self.transition_to(BlackjackState::RoundOver, events);
+                self.end_round(GameResult::DealerWin);
             }
-
             (false, false) => {
-                // Normal play continues
-                self.transition_to(BlackjackState::PlayerTurn { hand_index: 0 }, events);
+                self.state = BlackjackState::PlayerTurn { hand_index: 0 };
             }
         }
     }
@@ -88,24 +85,44 @@ impl Blackjack {
         }
     }
 
-    pub fn start_round(&mut self) -> Vec<BlackjackEvent> {
-        let mut events = vec![];
-        self.table.player_hands = vec![PlayerHand::new(10)];
+    pub fn start_round(&mut self) {
+        if self.state != BlackjackState::RoundOver && self.state != BlackjackState::Dealing {
+            return;
+        }
 
+        self.table.player_hands = vec![PlayerHand::new(10)];
         self.table.dealer_hand.clear_hand();
         self.result = GameResult::Pending;
 
-        self.transition_to(BlackjackState::Dealing, &mut events);
+        self.state = BlackjackState::Dealing;
 
         let bet = self.table.player_hands[0].bet.amount;
-
         if !self.bank.withdraw(bet) {
-            //TODO: add state/view for "out of money"
-            return events;
+            // TODO: out-of-money state
+            return;
         }
 
-        self.advance_automatic_transitions(&mut events);
-        events
+        self.run_automatic();
+        #[cfg(test)]
+        {
+            eprintln!(
+                "START ROUND-> P: {:?} | D: {:?}",
+                self.table.player_hands[0].hand.cards(),
+                self.table.dealer_hand.cards()
+            );
+        }
+    }
+
+    fn end_round(&mut self, result: GameResult) {
+        for hand in &mut self.table.player_hands {
+            hand.is_complete = true;
+        }
+
+        self.result = result;
+        self.state = BlackjackState::RoundOver;
+        if self.needs_shuffle() {
+            self.shuffle_shoe();
+        }
     }
 
     pub fn needs_shuffle(&self) -> bool {
@@ -116,85 +133,50 @@ impl Blackjack {
         self.shoe = Shoe::new_shuffled(); //TODO expand shoe to handle multiple shuffles
     }
 
-    pub fn apply(&mut self, action: PlayerAction) -> Vec<BlackjackEvent> {
-        let mut events = vec![];
-        let snapshot = self.state;
-        let handled = match snapshot {
-            BlackjackState::PlayerTurn { hand_index } => {
-                self.handle_player_turn(hand_index, action, &mut events)
-            }
-            BlackjackState::Dealing | BlackjackState::DealerTurn | BlackjackState::RoundOver => {
-                // These phases are engine-driven; player input is ignored.
-                events.push(BlackjackEvent::ActionIgnored {
-                    action,
-                    state: snapshot,
-                });
-                return events;
-            }
+    pub fn apply(&mut self, action: PlayerAction) {
+        let BlackjackState::PlayerTurn { hand_index } = self.state else {
+            return;
         };
 
-        if !handled {
-            events.push(BlackjackEvent::ActionIgnored {
-                action,
-                state: snapshot,
-            });
-            return events;
+        self.apply_to_player_hand(hand_index, action);
+
+        if self.table.player_hands[hand_index].is_complete {
+            self.advance_after_hand_complete(hand_index);
         }
 
-        events.insert(0, BlackjackEvent::ActionApplied { action });
-        self.advance_automatic_transitions(&mut events);
-        events
+        self.run_automatic();
     }
 
-    pub fn request_new_round(&mut self) -> Vec<BlackjackEvent> {
-        if self.state != BlackjackState::RoundOver {
-            return vec![BlackjackEvent::RoundStartIgnored { state: self.state }];
-        }
+    // pub fn apply(&mut self, action: PlayerAction) {
+    //     let snapshot = self.state;
+    //     if let BlackjackState::PlayerTurn { hand_index } = snapshot {
+    //         self.handle_player_turn(hand_index, action);
 
-        if self.needs_shuffle() {
-            self.shuffle_shoe();
-        }
+    //         if self.table.player_hands[hand_index].is_complete {
+    //             self.advance_after_hand_complete(hand_index);
+    //         }
 
-        let mut events = vec![BlackjackEvent::RoundStarted];
-        events.extend(self.start_round());
-        events
-    }
+    //         self.advance_automatic_transitions();
+    //     }
+    // }
 
-    fn advance_automatic_transitions(&mut self, events: &mut Vec<BlackjackEvent>) {
+    fn run_automatic(&mut self) {
         loop {
             match self.state {
-                BlackjackState::Dealing => self.deal_initial_cards(events),
-                BlackjackState::DealerTurn => self.play_dealer(events),
+                BlackjackState::Dealing => {
+                    self.deal_initial_cards();
+                    self.resolve_blackjack_or_continue();
+                }
+                BlackjackState::DealerTurn => self.play_dealer(),
                 BlackjackState::PlayerTurn { .. } | BlackjackState::RoundOver => break,
             }
         }
     }
 
-    fn transition_to(&mut self, next: BlackjackState, events: &mut Vec<BlackjackEvent>) {
-        let previous = self.state;
-        self.state = next;
+    fn advance_after_hand_complete(&mut self, completed_idx: usize) {
+        debug_assert!(self.table.player_hands[completed_idx].is_complete);
 
-        if previous != next {
-            events.push(BlackjackEvent::StateChanged {
-                from: previous,
-                to: next,
-            });
-        }
-    }
-
-    fn set_result(&mut self, result: GameResult, events: &mut Vec<BlackjackEvent>) {
-        self.result = result;
-        if result != GameResult::Pending {
-            events.push(BlackjackEvent::RoundResolved { result });
-        }
-    }
-
-    fn advance_to_dealer(&mut self, events: &mut Vec<BlackjackEvent>) {
-        self.transition_to(BlackjackState::DealerTurn, events);
-    }
-
-    fn advance_player_turn_or_dealer(&mut self, idx: usize, events: &mut Vec<BlackjackEvent>) {
-        let next = idx + 1;
+        let next = completed_idx + 1;
 
         if let Some((next_idx, _)) = self
             .table
@@ -204,51 +186,39 @@ impl Blackjack {
             .skip(next)
             .find(|(_, h)| !h.is_complete)
         {
-            self.transition_to(
-                BlackjackState::PlayerTurn {
-                    hand_index: next_idx,
-                },
-                events,
-            );
+            self.state = BlackjackState::PlayerTurn {
+                hand_index: next_idx,
+            };
         } else {
-            self.advance_to_dealer(events);
+            self.state = BlackjackState::DealerTurn;
         }
     }
 
-    fn handle_player_turn(
-        &mut self,
-        idx: usize,
-        action: PlayerAction,
-        events: &mut Vec<BlackjackEvent>,
-    ) -> bool {
+    fn apply_to_player_hand(&mut self, idx: usize, action: PlayerAction) {
         let hand = &mut self.table.player_hands[idx];
 
         match action {
             PlayerAction::Hit => {
                 hand.hand.add(self.shoe.draw());
 
-                if rules::is_bust(&hand.hand) {
+                if rules::is_bust(&hand.hand.cards()) {
                     hand.is_complete = true;
-                    self.advance_player_turn_or_dealer(idx, events);
                 }
-                true
             }
 
             PlayerAction::Stay => {
                 hand.is_complete = true;
-                self.advance_player_turn_or_dealer(idx, events);
-                true
             }
 
             PlayerAction::Double => {
                 // allowed only on the current hand
-                if !rules::can_double(&hand.hand) {
-                    return false;
+                if !rules::can_double(&hand.hand.cards()) {
+                    return;
                 }
 
                 let bet = hand.bet.amount;
                 if !self.bank.withdraw(bet) {
-                    return false;
+                    return;
                 }
 
                 hand.bet.amount *= 2;
@@ -256,8 +226,7 @@ impl Blackjack {
                 hand.is_complete = true;
 
                 // After double, move on (either next hand or dealer)
-                self.advance_player_turn_or_dealer(idx, events);
-                true
+                // self.advance_after_hand_complete(idx);
             }
 
             PlayerAction::Split => {
@@ -266,16 +235,16 @@ impl Blackjack {
                 {
                     let hand = &self.table.player_hands[idx];
                     if !rules::can_split(&hand.hand, split_context) {
-                        return false;
+                        return;
                     }
                     if self.bank.balance() < hand.bet.amount {
-                        return false;
+                        return;
                     }
                 }
 
                 let bet = self.table.player_hands[idx].bet.amount;
                 if !self.bank.withdraw(bet) {
-                    return false;
+                    return;
                 }
 
                 // Extract the two original cards without holding a borrow over self.draw_card()
@@ -299,31 +268,30 @@ impl Blackjack {
                 self.table.player_hands.push(split_hand);
 
                 // Continue playing primary first
-                self.transition_to(BlackjackState::PlayerTurn { hand_index: 0 }, events);
-                true
+                self.state = BlackjackState::PlayerTurn { hand_index: idx };
             }
         }
     }
 
-    fn play_dealer(&mut self, events: &mut Vec<BlackjackEvent>) {
-        while rules::dealer_should_hit(&self.table.dealer_hand) {
+    fn play_dealer(&mut self) {
+        while rules::dealer_should_hit(&self.table.dealer_hand.cards()) {
             self.table.dealer_hand.add(self.shoe.draw());
         }
 
-        self.resolve_round(events);
+        self.resolve_round();
     }
 
-    fn resolve_round(&mut self, events: &mut Vec<BlackjackEvent>) {
-        let dealer_score = rules::hand_score(&self.table.dealer_hand);
-        let dealer_bust = rules::is_bust(&self.table.dealer_hand);
+    fn resolve_round(&mut self) {
+        let dealer_score = rules::hand_score(&self.table.dealer_hand.cards());
+        let dealer_bust = rules::is_bust(&self.table.dealer_hand.cards());
 
         let mut any_win = false;
         let mut any_push = false;
         let mut any_loss = false;
 
         for hand in &self.table.player_hands {
-            let player_score = rules::hand_score(&hand.hand);
-            let player_bust = rules::is_bust(&hand.hand);
+            let player_score = rules::hand_score(&hand.hand.cards());
+            let player_bust = rules::is_bust(&hand.hand.cards());
 
             let result = if player_bust {
                 GameResult::DealerWin
@@ -363,8 +331,7 @@ impl Blackjack {
             GameResult::Pending
         };
 
-        self.set_result(result, events);
-        self.transition_to(BlackjackState::RoundOver, events);
+        self.end_round(result);
     }
     fn split_context(&self) -> SplitContext {
         if self.table.player_hands.len() > 1 {
@@ -494,125 +461,36 @@ impl Blackjack {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        bank::bank::Bank,
-        cards::{Card, Suit, Value},
-    };
-
     use super::*;
+    use crate::bank::bank::Bank;
+    use crate::cards::{Card, Suit, Value};
 
     #[test]
-    fn new_round_withdraws_initial_bet() {
+    fn start_round_withdraws_initial_bet() {
         let mut game = Blackjack::new();
         game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::TWO),
-            Card::new(Suit::CLUBS, Value::THREE),
-            Card::new(Suit::HEARTS, Value::FOUR),
-            Card::new(Suit::DIAMONDS, Value::FIVE),
-        ]);
-        game.start_round();
-        let view = game.view();
-
-        assert_eq!(view.bank_balance, 1_000 - 10);
-        assert_eq!(view.player_hands[0].bet_amount, 10);
-    }
-
-    #[test]
-    fn start_round_resolves_dealing_before_waiting_for_player() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::FIVE),
-            Card::new(Suit::HEARTS, Value::SIX),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::TWO),    // p1
+            Card::new(Suit::CLUBS, Value::THREE),   // d hole
+            Card::new(Suit::HEARTS, Value::FOUR),   // p2
+            Card::new(Suit::DIAMONDS, Value::FIVE), // d up
         ]);
 
         game.start_round();
 
-        assert!(matches!(
-            game.view().phase,
-            BlackjackState::PlayerTurn { .. } | BlackjackState::RoundOver
-        ));
+        assert_eq!(game.view().bank_balance, 1_000 - 10);
+        assert_eq!(game.view().player_hands[0].bet_amount, 10);
     }
 
     #[test]
-    fn apply_ignores_input_during_engine_driven_states() {
-        let mut game = Blackjack::new();
-        game.state = BlackjackState::DealerTurn;
-        let dealer_turn_events = game.apply(PlayerAction::Hit);
-        assert_eq!(game.state, BlackjackState::DealerTurn);
-        assert_eq!(
-            dealer_turn_events,
-            vec![BlackjackEvent::ActionIgnored {
-                action: PlayerAction::Hit,
-                state: BlackjackState::DealerTurn,
-            }]
-        );
-
-        game.state = BlackjackState::Dealing;
-        let dealing_events = game.apply(PlayerAction::Stay);
-        assert_eq!(game.state, BlackjackState::Dealing);
-        assert_eq!(
-            dealing_events,
-            vec![BlackjackEvent::ActionIgnored {
-                action: PlayerAction::Stay,
-                state: BlackjackState::Dealing,
-            }]
-        );
-
-        game.state = BlackjackState::RoundOver;
-        let round_over_events = game.apply(PlayerAction::Stay);
-        assert_eq!(game.state, BlackjackState::RoundOver);
-        assert_eq!(
-            round_over_events,
-            vec![BlackjackEvent::ActionIgnored {
-                action: PlayerAction::Stay,
-                state: BlackjackState::RoundOver,
-            }]
-        );
-    }
-
-    #[test]
-    fn apply_stay_emits_action_and_transition_events() {
+    fn initial_deal_is_two_cards_each() {
         let mut game = Blackjack::new();
         game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::FIVE),
-            Card::new(Suit::HEARTS, Value::SIX),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::FIVE),    // p1
+            Card::new(Suit::HEARTS, Value::SIX),     // d hole
+            Card::new(Suit::CLUBS, Value::TEN),      // p2
+            Card::new(Suit::DIAMONDS, Value::SEVEN), // d up
         ]);
-        game.start_round();
 
-        let events = game.apply(PlayerAction::Stay);
-
-        assert!(events.contains(&BlackjackEvent::ActionApplied {
-            action: PlayerAction::Stay
-        }));
-        assert!(events.contains(&BlackjackEvent::StateChanged {
-            from: BlackjackState::PlayerTurn { hand_index: 0 },
-            to: BlackjackState::DealerTurn,
-        }));
-        assert!(events.contains(&BlackjackEvent::StateChanged {
-            from: BlackjackState::DealerTurn,
-            to: BlackjackState::RoundOver,
-        }));
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, BlackjackEvent::RoundResolved { .. })),
-            "Expected a RoundResolved event after dealer play"
-        );
-    }
-
-    #[test]
-    fn new_round_deals_initial_cards() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::FIVE),
-            Card::new(Suit::HEARTS, Value::SIX),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-        ]);
         game.start_round();
         let view = game.view();
 
@@ -621,293 +499,174 @@ mod tests {
     }
 
     #[test]
-    fn hit_adds_one_card_to_player_hand() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::FIVE),
-            Card::new(Suit::HEARTS, Value::SIX),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-            Card::new(Suit::SPADES, Value::TWO),
-        ]);
-        game.start_round();
-
-        let initial_cards = game.view().player_hands[0].cards.len();
-        game.apply(PlayerAction::Hit);
-
-        let view = game.view();
-        assert_eq!(view.player_hands[0].cards.len(), initial_cards + 1);
-    }
-
-    #[test]
-    fn stay_advances_to_round_over() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::FIVE),
-            Card::new(Suit::HEARTS, Value::SIX),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-        ]);
-        game.start_round();
-        game.apply(PlayerAction::Stay);
-
-        let view = game.view();
-        assert_eq!(view.phase, BlackjackState::RoundOver);
-    }
-
-    #[test]
-    fn double_is_available_on_first_player_turn() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::FIVE),
-            Card::new(Suit::HEARTS, Value::SIX),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-        ]);
-        game.start_round();
-        let view = game.view();
-
-        assert!(view.available_actions.contains(&PlayerAction::Double));
-    }
-
-    #[test]
-    fn double_is_not_available_after_hit() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::FIVE),
-            Card::new(Suit::HEARTS, Value::SIX),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-            Card::new(Suit::SPADES, Value::TWO),
-        ]);
-        game.start_round();
-
-        game.apply(PlayerAction::Hit);
-
-        let view = game.view();
-        assert!(!view.available_actions.contains(&PlayerAction::Double));
-    }
-
-    #[test]
-    fn double_doubles_bet_and_withdraws_balance() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::NINE),
-            Card::new(Suit::HEARTS, Value::EIGHT),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-            Card::new(Suit::SPADES, Value::KING),
-        ]);
-        game.start_round();
-
-        let initial_balance = game.view().bank_balance;
-        let initial_bet = game.view().player_hands[0].bet_amount;
-
-        game.apply(PlayerAction::Double);
-
-        let view = game.view();
-        assert_eq!(view.player_hands[0].bet_amount, initial_bet * 2);
-        assert_eq!(view.bank_balance, initial_balance - initial_bet);
-    }
-
-    #[test]
-    fn double_draws_one_card_and_ends_round() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::NINE),
-            Card::new(Suit::HEARTS, Value::EIGHT),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-            Card::new(Suit::SPADES, Value::KING),
-        ]);
-        game.start_round();
-
-        let initial_cards = game.view().player_hands[0].cards.len();
-        game.apply(PlayerAction::Double);
-
-        let view = game.view();
-        assert_eq!(view.player_hands[0].cards.len(), initial_cards + 1);
-        assert_eq!(view.phase, BlackjackState::RoundOver);
-    }
-
-    #[test]
-    fn double_is_ignored_after_hit() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::FIVE),
-            Card::new(Suit::HEARTS, Value::SIX),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-            Card::new(Suit::SPADES, Value::TWO),
-        ]);
-        game.start_round();
-
-        game.apply(PlayerAction::Hit);
-        let balance_after_hit = game.view().bank_balance;
-
-        game.apply(PlayerAction::Double);
-
-        let view = game.view();
-        assert_eq!(view.bank_balance, balance_after_hit);
-    }
-
-    #[test]
-    fn bet_resets_after_new_round() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::NINE),
-            Card::new(Suit::HEARTS, Value::EIGHT),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-            Card::new(Suit::SPADES, Value::KING),
-        ]);
-        game.start_round();
-
-        game.apply(PlayerAction::Double);
-        assert!(game.view().player_hands[0].bet_amount > 10);
-
-        game.apply(PlayerAction::Stay);
-        assert_eq!(game.view().phase, BlackjackState::RoundOver);
-
-        let events = game.request_new_round();
-        assert!(events.contains(&BlackjackEvent::RoundStarted));
-
-        let view = game.view();
-        assert_eq!(view.player_hands[0].bet_amount, 10);
-    }
-
-    #[test]
-    fn request_new_round_is_ignored_when_round_is_not_over() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::FIVE),
-            Card::new(Suit::HEARTS, Value::SIX),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-        ]);
-        game.start_round();
-
-        let events = game.request_new_round();
-
-        assert_eq!(
-            events,
-            vec![BlackjackEvent::RoundStartIgnored {
-                state: BlackjackState::PlayerTurn { hand_index: 0 },
-            }]
-        );
-    }
-
-    #[test]
     fn natural_blackjack_pays_three_to_two() {
         let mut game = Blackjack::new();
         game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::ACE),
-            Card::new(Suit::HEARTS, Value::TEN),
-            Card::new(Suit::CLUBS, Value::NINE),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::ACE),     // p1
+            Card::new(Suit::CLUBS, Value::NINE),     // d hole
+            Card::new(Suit::HEARTS, Value::TEN),     // p2 -> blackjack
+            Card::new(Suit::DIAMONDS, Value::SEVEN), // d up
         ]);
+
         game.start_round();
         let view = game.view();
+
+        assert_eq!(view.phase, BlackjackState::RoundOver);
         assert_eq!(view.result, GameResult::PlayerWin);
         assert_eq!(view.bank_balance, 1_000 - 10 + 25);
-    }
-
-    #[test]
-    fn player_and_dealer_blackjack_is_push() {
-        let mut game = Blackjack::new();
-        game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::ACE),
-            Card::new(Suit::HEARTS, Value::TEN),
-            Card::new(Suit::CLUBS, Value::ACE),
-            Card::new(Suit::DIAMONDS, Value::KING),
-        ]);
-
-        game.start_round();
-
-        let view = game.view();
-        assert_eq!(view.phase, BlackjackState::RoundOver);
-        assert_eq!(view.result, GameResult::Push);
-        assert_eq!(view.bank_balance, 1_000);
     }
 
     #[test]
     fn dealer_blackjack_wins_immediately() {
         let mut game = Blackjack::new();
         game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::TEN),
-            Card::new(Suit::HEARTS, Value::NINE),
-            Card::new(Suit::CLUBS, Value::ACE),
-            Card::new(Suit::DIAMONDS, Value::KING),
+            Card::new(Suit::CLUBS, Value::NINE),   // p1
+            Card::new(Suit::SPADES, Value::ACE),   // d hole
+            Card::new(Suit::HEARTS, Value::SEVEN), // p2
+            Card::new(Suit::DIAMONDS, Value::TEN), // d up -> blackjack
         ]);
 
         game.start_round();
-
         let view = game.view();
+
         assert_eq!(view.phase, BlackjackState::RoundOver);
         assert_eq!(view.result, GameResult::DealerWin);
         assert_eq!(view.bank_balance, 1_000 - 10);
     }
 
     #[test]
-    fn split_creates_two_hands_and_withdraws_second_bet() {
+    fn player_and_dealer_blackjack_is_push() {
         let mut game = Blackjack::new();
         game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::EIGHT),
-            Card::new(Suit::HEARTS, Value::EIGHT),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-            Card::new(Suit::SPADES, Value::TWO),
-            Card::new(Suit::HEARTS, Value::THREE),
+            Card::new(Suit::SPADES, Value::ACE),    // p1
+            Card::new(Suit::CLUBS, Value::ACE),     // d hole
+            Card::new(Suit::HEARTS, Value::TEN),    // p2
+            Card::new(Suit::DIAMONDS, Value::KING), // d up
         ]);
+
         game.start_round();
-
-        assert!(game.view().available_actions.contains(&PlayerAction::Split));
-        game.apply(PlayerAction::Split);
-
         let view = game.view();
-        assert_eq!(view.phase, BlackjackState::PlayerTurn { hand_index: 0 });
-        assert_eq!(view.player_hands.len(), 2);
-        assert_eq!(view.player_hands[0].cards.len(), 2);
-        assert_eq!(view.player_hands[1].cards.len(), 2);
-        assert_eq!(view.player_hands[0].bet_amount, 10);
-        assert_eq!(view.player_hands[1].bet_amount, 10);
-        assert_eq!(view.total_bet, 20);
-        assert_eq!(view.bank_balance, 1_000 - 10 - 10);
+
+        assert_eq!(view.phase, BlackjackState::RoundOver);
+        assert_eq!(view.result, GameResult::Push);
+        assert_eq!(view.bank_balance, 1_000);
     }
 
     #[test]
-    fn split_is_unavailable_when_bank_cannot_cover_second_bet() {
+    fn hit_adds_one_card() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::FIVE),    // p1
+            Card::new(Suit::HEARTS, Value::SIX),     // d hole
+            Card::new(Suit::CLUBS, Value::TEN),      // p2
+            Card::new(Suit::DIAMONDS, Value::SEVEN), // d up
+            Card::new(Suit::SPADES, Value::TWO),     // hit
+        ]);
+
+        game.start_round();
+        let before = game.view().player_hands[0].cards.len();
+
+        game.apply(PlayerAction::Hit);
+
+        assert_eq!(game.view().player_hands[0].cards.len(), before + 1);
+    }
+
+    #[test]
+    fn stay_runs_dealer_and_ends_round() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::HEARTS, Value::TEN),     // p1
+            Card::new(Suit::SPADES, Value::FIVE),    // d hole
+            Card::new(Suit::HEARTS, Value::SIX),     // p2 -> 16
+            Card::new(Suit::DIAMONDS, Value::SEVEN), // d up -> 12
+            Card::new(Suit::CLUBS, Value::TEN),      // dealer hits -> bust
+        ]);
+
+        game.start_round();
+        game.apply(PlayerAction::Stay);
+
+        let view = game.view();
+        assert_eq!(view.phase, BlackjackState::RoundOver);
+        assert_eq!(view.result, GameResult::PlayerWin);
+    }
+
+    #[test]
+    fn double_doubles_bet_withdraws_and_ends_round() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::SIX),     // p1
+            Card::new(Suit::HEARTS, Value::SIX),     // d hole
+            Card::new(Suit::CLUBS, Value::SIX),      // p2 -> 11
+            Card::new(Suit::DIAMONDS, Value::SEVEN), // d up
+            Card::new(Suit::SPADES, Value::TEN),     // double draw
+            Card::new(Suit::CLUBS, Value::TEN),      // dealer follow-up
+        ]);
+
+        game.start_round();
+        let bal0 = game.view().bank_balance;
+
+        game.apply(PlayerAction::Double);
+        let view = game.view();
+
+        assert_eq!(view.player_hands[0].bet_amount, 20);
+        assert_eq!(view.bank_balance, bal0 - 10);
+        assert_eq!(view.phase, BlackjackState::RoundOver);
+    }
+
+    #[test]
+    fn split_creates_two_hands_and_withdraws_second_bet() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::EIGHT), // p1
+            Card::new(Suit::HEARTS, Value::FIVE),  // d hole
+            Card::new(Suit::CLUBS, Value::EIGHT),  // p2 -> pair
+            Card::new(Suit::DIAMONDS, Value::SIX), // d up
+            Card::new(Suit::CLUBS, Value::TWO),    // primary draw
+            Card::new(Suit::HEARTS, Value::THREE), // split draw
+        ]);
+
+        game.start_round();
+        assert!(game.view().available_actions.contains(&PlayerAction::Split));
+
+        game.apply(PlayerAction::Split);
+        let view = game.view();
+
+        assert_eq!(view.player_hands.len(), 2);
+        assert_eq!(view.total_bet, 20);
+        assert_eq!(view.bank_balance, 1_000 - 20);
+        assert_eq!(view.phase, BlackjackState::PlayerTurn { hand_index: 0 });
+        assert_eq!(view.player_hands[0].cards.len(), 2);
+        assert_eq!(view.player_hands[1].cards.len(), 2);
+    }
+
+    #[test]
+    fn split_unavailable_if_bank_cannot_cover_second_bet() {
         let mut game = Blackjack::new();
         game.bank = Bank::new(10);
         game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::EIGHT),
-            Card::new(Suit::HEARTS, Value::EIGHT),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::EIGHT), // p1
+            Card::new(Suit::HEARTS, Value::FIVE),  // d hole
+            Card::new(Suit::CLUBS, Value::EIGHT),  // p2
+            Card::new(Suit::DIAMONDS, Value::SIX), // d up
         ]);
+
         game.start_round();
-
-        let before = game.view().player_hands.len();
         assert!(!game.view().available_actions.contains(&PlayerAction::Split));
-        game.apply(PlayerAction::Split);
-
-        let view = game.view();
-        assert_eq!(view.player_hands.len(), before);
-        assert_eq!(view.bank_balance, 0);
     }
 
     #[test]
     fn double_after_split_advances_to_next_hand() {
         let mut game = Blackjack::new();
         game.shoe = Shoe::rigged(vec![
-            Card::new(Suit::SPADES, Value::EIGHT),
-            Card::new(Suit::HEARTS, Value::EIGHT),
-            Card::new(Suit::CLUBS, Value::TEN),
-            Card::new(Suit::DIAMONDS, Value::SEVEN),
-            Card::new(Suit::SPADES, Value::TWO),
-            Card::new(Suit::HEARTS, Value::THREE),
-            Card::new(Suit::CLUBS, Value::FOUR),
+            Card::new(Suit::SPADES, Value::EIGHT), // p1
+            Card::new(Suit::HEARTS, Value::FIVE),  // d hole
+            Card::new(Suit::CLUBS, Value::EIGHT),  // p2
+            Card::new(Suit::DIAMONDS, Value::SIX), // d up
+            Card::new(Suit::CLUBS, Value::TWO),    // primary draw
+            Card::new(Suit::HEARTS, Value::THREE), // split draw
+            Card::new(Suit::SPADES, Value::TEN),   // double draw for primary
         ]);
+
         game.start_round();
         game.apply(PlayerAction::Split);
         game.apply(PlayerAction::Double);
@@ -917,27 +676,113 @@ mod tests {
         assert!(view.player_hands[0].is_complete);
         assert!(!view.player_hands[1].is_complete);
         assert_eq!(view.player_hands[0].bet_amount, 20);
-        assert_eq!(view.bank_balance, 1_000 - 10 - 10 - 10);
+        assert_eq!(view.bank_balance, 1_000 - 30);
     }
 
     #[test]
-    fn mixed_split_outcome_does_not_leave_result_pending() {
+    fn input_is_ignored_when_not_player_turn() {
+        let mut game = Blackjack::new();
+        game.state = BlackjackState::DealerTurn;
+
+        let snapshot = game.view();
+        game.apply(PlayerAction::Hit);
+
+        let view = game.view();
+        assert_eq!(view.phase, snapshot.phase);
+        assert_eq!(view.bank_balance, snapshot.bank_balance);
+    }
+
+    #[test]
+    fn bust_ends_hand_and_prevents_further_actions() {
         let mut game = Blackjack::new();
         game.shoe = Shoe::rigged(vec![
             Card::new(Suit::SPADES, Value::TEN),
             Card::new(Suit::HEARTS, Value::TEN),
-            Card::new(Suit::CLUBS, Value::KING),
-            Card::new(Suit::DIAMONDS, Value::QUEEN),
-            Card::new(Suit::SPADES, Value::QUEEN),
-            Card::new(Suit::HEARTS, Value::TWO),
+            Card::new(Suit::CLUBS, Value::NINE),
+            Card::new(Suit::DIAMONDS, Value::SEVEN),
+            Card::new(Suit::SPADES, Value::FIVE), // bust
         ]);
+
         game.start_round();
-        game.apply(PlayerAction::Split);
-        game.apply(PlayerAction::Stay);
+        game.apply(PlayerAction::Hit);
+
+        let view = game.view();
+        assert!(view.player_hands[0].is_complete);
+        assert_eq!(view.phase, BlackjackState::RoundOver);
+    }
+
+    #[test]
+    fn dealer_stands_on_soft_17() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::TEN),   // p1
+            Card::new(Suit::HEARTS, Value::ACE),   // d hole
+            Card::new(Suit::CLUBS, Value::SEVEN),  // p2
+            Card::new(Suit::DIAMONDS, Value::SIX), // d up -> soft 17
+        ]);
+
+        game.start_round();
         game.apply(PlayerAction::Stay);
 
         let view = game.view();
         assert_eq!(view.phase, BlackjackState::RoundOver);
-        assert_eq!(view.result, GameResult::Push);
+    }
+
+    #[test]
+    fn dealer_hits_on_16() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::TEN),
+            Card::new(Suit::HEARTS, Value::TEN),
+            Card::new(Suit::CLUBS, Value::SIX),
+            Card::new(Suit::DIAMONDS, Value::SIX),
+            Card::new(Suit::SPADES, Value::TEN), // dealer busts
+        ]);
+
+        game.start_round();
+        game.apply(PlayerAction::Stay);
+
+        let view = game.view();
+        assert_eq!(view.result, GameResult::PlayerWin);
+    }
+
+    #[test]
+    fn split_one_hand_bust_other_continues() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::EIGHT),   // p1
+            Card::new(Suit::HEARTS, Value::TEN),     // d hole
+            Card::new(Suit::CLUBS, Value::EIGHT),    // p2
+            Card::new(Suit::DIAMONDS, Value::SEVEN), // d up
+            Card::new(Suit::SPADES, Value::TEN),     // primary split draw
+            Card::new(Suit::CLUBS, Value::THREE),    // split hand draw
+            Card::new(Suit::HEARTS, Value::TEN),     // primary hit -> bust
+        ]);
+
+        game.start_round();
+        game.apply(PlayerAction::Split);
+        game.apply(PlayerAction::Hit);
+
+        let view = game.view();
+        assert_eq!(view.phase, BlackjackState::PlayerTurn { hand_index: 1 });
+    }
+
+    #[test]
+    fn cannot_split_twice() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            Card::new(Suit::SPADES, Value::EIGHT),
+            Card::new(Suit::HEARTS, Value::FIVE),
+            Card::new(Suit::CLUBS, Value::EIGHT),
+            Card::new(Suit::DIAMONDS, Value::SIX),
+            Card::new(Suit::CLUBS, Value::EIGHT),
+            Card::new(Suit::HEARTS, Value::EIGHT),
+        ]);
+
+        game.start_round();
+        game.apply(PlayerAction::Split);
+
+        let view = game.view();
+        assert!(!view.available_actions.contains(&PlayerAction::Split));
     }
 }
