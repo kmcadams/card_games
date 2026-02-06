@@ -785,4 +785,119 @@ mod tests {
         let view = game.view();
         assert!(!view.available_actions.contains(&PlayerAction::Split));
     }
+
+    #[test]
+    fn split_one_hand_wins_other_loses() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            // Initial deal
+            Card::new(Suit::SPADES, Value::EIGHT), // p1
+            Card::new(Suit::HEARTS, Value::SEVEN), // d hole
+            Card::new(Suit::CLUBS, Value::EIGHT),  // p2
+            Card::new(Suit::DIAMONDS, Value::TEN), // d up (17)
+            // Split draws
+            Card::new(Suit::CLUBS, Value::TEN),  // hand 0 -> 18
+            Card::new(Suit::HEARTS, Value::TEN), // hand 1 -> 18 (but will bust)
+            // Player hits second hand
+            Card::new(Suit::SPADES, Value::FIVE), // busts hand 1
+        ]);
+
+        game.start_round();
+        game.apply(PlayerAction::Split);
+
+        // First hand stays on 18
+        game.apply(PlayerAction::Stay);
+
+        // Second hand hits and busts
+        game.apply(PlayerAction::Hit);
+
+        let view = game.view();
+
+        // Dealer stays at 17
+        assert_eq!(view.phase, BlackjackState::RoundOver);
+
+        // Bank math:
+        // Start: 1000
+        // Initial bet: -10
+        // Split bet:   -10
+        // Hand 0 wins: +20
+        // Hand 1 loses: +0
+        assert_eq!(view.bank_balance, 1_000 - 20 + 20);
+
+        // Hand-level assertions
+        assert!(view.player_hands[0].is_complete);
+        assert!(view.player_hands[1].is_complete);
+    }
+
+    #[test]
+    fn split_one_hand_bust_other_wins_when_dealer_busts() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            // Initial deal
+            Card::new(Suit::SPADES, Value::EIGHT),   // p1
+            Card::new(Suit::HEARTS, Value::TEN),     // d hole
+            Card::new(Suit::CLUBS, Value::EIGHT),    // p2
+            Card::new(Suit::DIAMONDS, Value::SEVEN), // d up -> dealer 17
+            // Split draws
+            Card::new(Suit::SPADES, Value::TEN), // hand 0 -> 18
+            Card::new(Suit::CLUBS, Value::TEN),  // hand 1 -> 18
+            // Player hits hand 0 -> bust
+            Card::new(Suit::HEARTS, Value::TEN), // hand 0 busts
+            // Dealer hits -> bust
+            Card::new(Suit::DIAMONDS, Value::SIX), // dealer 23
+        ]);
+
+        game.start_round();
+        game.apply(PlayerAction::Split);
+
+        // Hand 0: hit -> bust
+        game.apply(PlayerAction::Hit);
+
+        // Hand 1: stay
+        game.apply(PlayerAction::Stay);
+
+        let view = game.view();
+
+        assert_eq!(view.phase, BlackjackState::RoundOver);
+
+        // One win, one loss → net +10
+        // Start 1000 - 20 bet + 20 payout = 1000
+        assert_eq!(view.bank_balance, 1_000);
+    }
+    #[test]
+    fn double_on_first_split_hand_only() {
+        let mut game = Blackjack::new();
+        game.shoe = Shoe::rigged(vec![
+            // Initial deal
+            Card::new(Suit::SPADES, Value::EIGHT),  // p1
+            Card::new(Suit::HEARTS, Value::SIX),    // d hole
+            Card::new(Suit::CLUBS, Value::EIGHT),   // p2
+            Card::new(Suit::DIAMONDS, Value::FIVE), // d up
+            // Split draws
+            Card::new(Suit::CLUBS, Value::TWO),    // hand 0 -> 10
+            Card::new(Suit::HEARTS, Value::THREE), // hand 1 -> 11
+            // Double draw for hand 0
+            Card::new(Suit::SPADES, Value::TEN), // hand 0 -> 20
+            // Dealer resolution
+            Card::new(Suit::CLUBS, Value::TEN), // dealer hits
+        ]);
+
+        game.start_round();
+        game.apply(PlayerAction::Split);
+
+        // Double only hand 0
+        game.apply(PlayerAction::Double);
+
+        let view = game.view();
+
+        assert_eq!(view.phase, BlackjackState::PlayerTurn { hand_index: 1 });
+        assert!(view.player_hands[0].is_complete);
+        assert!(!view.player_hands[1].is_complete);
+
+        assert_eq!(view.player_hands[0].bet_amount, 20);
+        assert_eq!(view.player_hands[1].bet_amount, 10);
+
+        // Initial 10 + split 10 + double 10
+        assert_eq!(view.bank_balance, 1_000 - 30);
+    }
 }
